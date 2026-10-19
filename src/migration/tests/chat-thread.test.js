@@ -488,9 +488,9 @@ test("a new-chat welcome screen is not counted as a conversation", () => {
 test("a ChatGPT new-chat app shell is not counted as conversation context", () => {
     // 2026 app shell: <main> holds the hero while the sidebar/history lives
     // outside it. On "/" there is no conversation, so the estimate/deep-scan
-    // must not turn the app shell into ~1,000 phantom tokens (1% usage on a
-    // blank chat — the bug this guards).
-    const hero = node("div", { text: "What's on the agenda today? Create an image or sticker Write or edit Search the web" });
+    // must not turn the app shell into phantom tokens (75–1,063 on a blank
+    // chat — the bug this guards).
+    const hero = node("div", { text: "Hey, omen. Ready to dive in? Create an image or sticker Write or edit Search the web" });
     const main = node("main");
     main.appendChild(hero);
     const shell = node("div");
@@ -529,6 +529,151 @@ test("an existing ChatGPT conversation still falls back to the thread estimate",
         const result = extractChatThread("chatgpt");
         assert.equal(result.source, "thread");
         assert.ok(result.messages[0].content.length > 400);
+    } finally {
+        if (prev === undefined) delete globalThis.location;
+        else globalThis.location = prev;
+    }
+});
+
+test("ChatGPT 2026 unit-key markup reads user + assistant exactly once", () => {
+    // Live 2026 app shell: no data-message-author-role / data-turn at all.
+    // Each message is [data-chatgpt-search-unit-key="…:user|assistant"], and
+    // the assistant wrapper carries an sr-only "ChatGPT said:" label.
+    const user = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:0:user" },
+        text: "hello"
+    });
+    const assistant = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:1:assistant" }
+    });
+    assistant.appendChild(node("h4", {
+        attrs: { class: "sr-only", "data-conversation-role": "assistant" },
+        text: "ChatGPT said:"
+    }));
+    assistant.appendChild(node("div", {
+        attrs: { class: "MarkdownRoot" },
+        text: "Hey! 👋 What's up? What are we working on today?"
+    }));
+    const turn = node("div", { attrs: { "data-turn-key": "turn-1" } });
+    turn.appendChild(user);
+    turn.appendChild(assistant);
+    const thread = node("div");
+    thread.appendChild(turn);
+    const main = node("main");
+    main.appendChild(thread);
+    const body = node("body");
+    body.appendChild(main);
+    installDom({ main, body, selectors: { "[data-chatgpt-search-unit-key]": [user, assistant] } });
+
+    const prev = globalThis.location;
+    globalThis.location = { pathname: "/c/12345678-1234-1234-1234-123456789abc" };
+    try {
+        const result = extractChatThread("chatgpt");
+        assert.equal(result.source, "selectors");
+        assert.equal(result.messages.length, 2);
+        assert.deepEqual(result.messages.map((message) => message.role), ["user", "assistant"]);
+        assert.equal(result.messages[0].content, "hello");
+        assert.ok(!/said:/i.test(result.messages[1].content), result.messages[1].content);
+        assert.ok(result.messages[1].content.startsWith("Hey!"), result.messages[1].content);
+        const chars = result.messages.reduce((total, message) => total + message.content.length, 0);
+        assert.ok(chars < 100, `read as ${chars} chars`);
+    } finally {
+        if (prev === undefined) delete globalThis.location;
+        else globalThis.location = prev;
+    }
+});
+
+test("hidden messages from the previous chat are not counted after SPA navigation", () => {
+    // ChatGPT's 2026 shell leaves the old workspace mounted in a hidden div
+    // while the next chat renders. querySelectorAll still sees its wrappers,
+    // which made the HUD jump from 16 to the previous chat's 265 tokens after
+    // switching away and back. Only rendered units belong to this chat.
+    const user = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:0:user" },
+        text: "hello"
+    });
+    const assistant = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:1:assistant" }
+    });
+    assistant.appendChild(node("h4", {
+        attrs: { class: "sr-only", "data-conversation-role": "assistant" },
+        text: "ChatGPT said:"
+    }));
+    assistant.appendChild(node("div", {
+        attrs: { class: "MarkdownRoot" },
+        text: "Hey! 👋 What's up? What are we working on today?"
+    }));
+    const visibleTurn = node("div", { attrs: { "data-turn-key": "turn-visible" } });
+    visibleTurn.appendChild(user);
+    visibleTurn.appendChild(assistant);
+    const visibleThread = node("div");
+    visibleThread.appendChild(visibleTurn);
+
+    const staleWorkspace = node("div", { attrs: { hidden: "", "aria-hidden": "true" } });
+    const staleUser = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:0:user" },
+        text: "fix the context of gpt it gets stuck on 2368 despite refreshing"
+    });
+    const staleAssistant = node("div", {
+        attrs: { "data-chatgpt-search-unit-key": "fallback-turn-0:1:assistant" },
+        text: "ChatGPT said: The HUD is reading the app shell instead of the thread."
+    });
+    const staleTurn = node("div", { attrs: { "data-turn-key": "turn-stale" } });
+    staleTurn.appendChild(staleUser);
+    staleTurn.appendChild(staleAssistant);
+    staleWorkspace.appendChild(staleTurn);
+
+    const body = node("body");
+    body.appendChild(visibleThread);
+    body.appendChild(staleWorkspace);
+    installDom({
+        body,
+        selectors: { "[data-chatgpt-search-unit-key]": [user, assistant, staleUser, staleAssistant] }
+    });
+
+    const prev = globalThis.location;
+    globalThis.location = { pathname: "/c/12345678-1234-1234-1234-123456789abc" };
+    try {
+        const result = extractChatThread("chatgpt");
+        assert.equal(result.source, "selectors");
+        assert.equal(result.messages.length, 2);
+        assert.deepEqual(result.messages.map((message) => message.role), ["user", "assistant"]);
+        assert.equal(result.messages[0].content, "hello");
+        assert.ok(!/fix the context/i.test(result.messages[1].content), result.messages[1].content);
+        const chars = result.messages.reduce((total, message) => total + message.content.length, 0);
+        assert.ok(chars < 100, `stale hidden chat read as ${chars} chars`);
+    } finally {
+        if (prev === undefined) delete globalThis.location;
+        else globalThis.location = prev;
+    }
+});
+
+test("a short ChatGPT conversation is not replaced by the sidebar estimate", () => {
+    // The 2026 app shell keeps the chat history outside the thread. A
+    // two-message "hello" chat must stay ~10-20 tokens; threadContainer() used
+    // to pick the sidebar and replace it with ~1,174 tokens / 1% on screen.
+    const user = node("div", { attrs: { "data-message-author-role": "user" }, text: "hello" });
+    const assistant = node("div", { attrs: { "data-message-author-role": "assistant" }, text: "Hey! 👋 What's up? What are we working on today?" });
+    const thread = node("div");
+    thread.appendChild(user);
+    thread.appendChild(assistant);
+    const sidebar = node("div");
+    for (let i = 0; i < 60; i++) {
+        sidebar.appendChild(node("div", { text: `Conversation ${i}: ${"planning the migration and testing every adapter ".repeat(3)}` }));
+    }
+    const body = node("body");
+    body.appendChild(sidebar);
+    body.appendChild(thread);
+    installDom({ body, selectors: { "[data-message-author-role]": [user, assistant] } });
+
+    const prev = globalThis.location;
+    globalThis.location = { pathname: "/c/12345678-1234-1234-1234-123456789abc" };
+    try {
+        const result = extractChatThread("chatgpt");
+        assert.equal(result.source, "selectors");
+        assert.equal(result.messages.length, 2);
+        const chars = result.messages.reduce((total, message) => total + message.content.length, 0);
+        assert.ok(chars < 100, `short chat read as ${chars} chars`);
     } finally {
         if (prev === undefined) delete globalThis.location;
         else globalThis.location = prev;

@@ -1,4 +1,4 @@
-# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-new-chat-guard)
+# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-new-chat-guard+hud-short-chat-anchor+hud-chatgpt-2026-dom+hud-stale-dom-guard)
 
 > Read this first. It documents every feature, file, data flow, upgrade,
 > and how to extend the project without breaking it.
@@ -173,19 +173,31 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
   message-sized blocks, so a chat dominated by its last answer is not walked
   into a single paragraph). If the selector reading covers <25% of the thread
   text and is under 1500 chars it is replaced by that estimate — a confident
-  tiny number is the bug users reported. When nothing is readable,
+  tiny number is the bug users reported. That comparison is anchored to the
+  matched messages' common ancestor (or to a container that actually holds
+  them), never to the app shell/sidebar: on the 2026 app shell a two-message
+  "hello" chat must stay ~15 tokens, not inherit the sidebar's ~1,174.
+  Sidebars and hidden panels are chrome too (`role=navigation|complementary`,
+  `aria-label="Chat history"`, `aria-hidden`, `[hidden]`), and `[data-turn]`
+  is a universal message selector with role inference. ChatGPT's newer 2026
+  app shell goes further: messages are
+  `[data-chatgpt-search-unit-key="…:user|assistant"]` wrappers with `sr-only`
+  role labels and no old attributes at all. That selector and role suffix are
+  first-class too; `sr-only` labels are skipped, and a leading
+  "You said:/ChatGPT said:" is stripped from matched content. When nothing is readable,
   `extractChatThread` returns a `reason`
   (`no-container`, `thread-too-small(n)`, `welcome-screen(n blocks)`) which
   `main.js` writes to the console and to the log panel ("View logs → Copy logs"),
   so an unreadable site is diagnosable from a screenshot of the logs.
   NEW-CHAT GUARD: on ChatGPT the root (`/`, no `/c/<id>`) with no message
   markup is a new chat, not a conversation — the reader returns
-  `new-chat` before the estimate/deep-scan, so the app shell (sidebar history
-  outside `<main>`, hidden panels) can never be counted as phantom usage
-  (1,063 tokens / 1% on a blank chat was this bug). A `/c/<uuid>` URL or any
-  message markup keeps the estimate path alive, so renamed app-shell
-  conversations and temporary chats still count. `main.js` also trims the
-  composer draft, so whitespace never renders as "+ 1 draft".
+  `new-chat` before the estimate/deep-scan, so the welcome screen and the app
+  shell (sidebar history outside `<main>`, hidden panels) can never be counted
+  as phantom usage (75 / 1,063 tokens on a blank chat was this bug). A
+  `/c/<uuid>` URL or any message markup keeps the estimate path alive, so
+  renamed app-shell conversations and temporary chats still count. `main.js`
+  cleans the composer draft (zero-width characters + trim), so an empty
+  composer never renders as "+ 1 draft".
   `update()` every 2s with `counting` mutex: `budget/price` from
   `matchPlatform(location.hostname)` (platforms.js is the only copy; the old
   inline `BUDGETS/PRICES` tables are gone).
@@ -902,26 +914,74 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
     reader, empty shell reporting the reader reason, conversation outside `<main>`
     found by deep-scan, valid bridge payload preferred, foreign payload refused.
 
-53. "Blank new ChatGPT chat counted as 1,063 tokens / 1%." The 2026 app shell
+53. "Blank new ChatGPT chat counted as 75 / 1,063 tokens." The 2026 app shell
     keeps the sidebar/history outside `<main>`, and the new-chat screen has no
-    message markup, so the 400-char/deep-scan fallback read the shell as the
-    thread. The visible welcome text is ~270 chars, but the estimate was ~4,000
-    (sidebar chat titles), hence 1,063 tokens / 1% on an empty chat.
-    `chat-thread.js` now returns `new-chat` (source `none`) when the platform is
-    ChatGPT, the URL has no `/c/<id>`, AND the page has no message markup
-    (`data-message-author-role` / `conversation-turn-*` holding real text).
-    Real conversations keep the estimate (URL gate); temporary chats with
-    messages keep it too (markup gate). `main.js` trims the composer draft, so
-    an empty composer no longer adds "+ 1 draft". New regression tests: the
-    app-shell welcome on `/` reads 0, and a `/c/<uuid>` shell still estimates.
-    `npm test` now 81.
+    message markup, so the thread estimate/deep-scan read the welcome screen
+    and shell as the conversation (the visible hero is ~270 chars; the
+    estimate reached ~4,000 with sidebar titles). `chat-thread.js` now returns
+    `new-chat` (source `none`) when the platform is ChatGPT, the URL has no
+    `/c/<id>`, AND the page has no message markup with real text
+    (`data-message-author-role` / `conversation-turn-*`). Real conversations
+    and temporary chats with messages keep the estimate path. `main.js` cleans
+    the composer draft (strips zero-width chars + trims), so an empty composer
+    no longer adds "+ 1 draft". New regression tests: app-shell welcome on
+    `/` reads 0, and a `/c/<uuid>` shell still estimates. `npm test` now 81.
+
+54. "Short ChatGPT chats showed the sidebar's token count (1,174 / 1%)." The
+    selectors matched the two real messages ("hello" + reply), but
+    `threadContainer()` walked into the sidebar/app shell because it held the
+    most text; the `matchedChars < 25%` partial-read guard then replaced the
+    correct tiny reading with the shell estimate. `chat-thread.js` now compares
+    against the lowest common ancestor of the matched message nodes — or the
+    thread container only when it actually contains those nodes — so the
+    sidebar cannot stand in for the conversation. Partial markup (answers
+    without questions) still uses the thread estimate. Added `[data-turn]` to
+    the universal selectors + role inference, and `isChrome()` now skips hidden
+    panels and navigation/complementary/history-labelled containers in
+    `readText`/`textLength`/`blockCount`/container walks. Regression test:
+    a short ChatGPT chat + 60-title plain-`<div>` sidebar + no `<main>` reads
+    `selectors`, 2 messages, <100 chars (browser probe: 15 tokens vs 16 truth;
+    the old path showed ~1,174). `npm test` now 82.
+
+55. "Real ChatGPT 2026 chats still showed a thread estimate / wrong count."
+    Live DOM inspection of the real page (throwaway copy of the user's Brave
+    profile) showed the 2026 app shell has **zero** `data-message-author-role`,
+    `data-turn`, `article`, or message testid markup. Each message is a
+    `[data-chatgpt-search-unit-key="…:user|assistant"]` wrapper; the assistant
+    wrapper contains an `sr-only` `<h4 data-conversation-role="assistant">
+    ChatGPT said:</h4>`. Added the selector, parsed the role suffix (with
+    `data-conversation-role` and the sr-only label as fallbacks), skipped
+    `.sr-only` nodes as chrome, and stripped a leading
+    "You said:/ChatGPT said:" from matched content. The new-chat guard's
+    `hasMessageMarkup()` also recognizes the new selector. New test: 2026
+    unit-key markup reads "hello" + reply as 2 messages, roles user/assistant,
+    no "said:" label. Live verification on the real "Greeting response" chat:
+    HUD 16 tokens, status "Local tokenizer estimate" (was 1,174 / thread
+    estimate). `npm test` now 83.
+
+56. "Context value changes after switching chats and coming back." ChatGPT's
+    2026 SPA leaves the previous conversation mounted in a `display:none`
+    workspace while the next chat renders. `querySelectorAll` still returned the
+    hidden `[data-chatgpt-search-unit-key]` wrappers, so after opening another
+    chat and returning to "Greeting response" the reader counted 6 units
+    (2 visible + 4 hidden) and the HUD jumped 16 → 265; the hidden wrappers also
+    defeated the blank-chat guard (`units: 2` on `/`). `chat-thread.js` now
+    filters selector matches through `isVisibleNode()` (hidden attribute,
+    `aria-hidden`, `inert`, computed `display:none` / `visibility:hidden` /
+    `content-visibility:hidden`, or a zero-size box) before `innermost()` and
+    counting; `hasMessageMarkup()` and `isChrome()` use the same hidden test.
+    New regression: a visible 2-message thread plus a hidden stale workspace
+    reads 2 messages / <100 chars. Live verification on a copy of the user's
+    Brave profile: blank `/` = 0 / "Waiting for messages"; Greeting = 16;
+    "OpenCode Context HUD Fix" = 2,505; Greeting → other → Greeting = 16;
+    scrolling the Greeting thread = 16. `npm test` now 84.
 
 ## 5. Build / test / run
 
 ```bash
 npm install
 node build.js        # or npm run build → dist/{content,claude-content,claude-bridge,chatgpt-bridge,migration}.js + css
-npm test             # 81 tests: migration + chat-thread + chatgpt-adapter + fullhistory + sir/pdf/ocr/retrieval/claude/composer (run it, don't trust the count)
+npm test             # 84 tests: migration + chat-thread + chatgpt-adapter + fullhistory + sir/pdf/ocr/retrieval/claude/composer (run it, don't trust the count)
 npm run test:chatthread   # the Context HUD counting rules only
 ```
 

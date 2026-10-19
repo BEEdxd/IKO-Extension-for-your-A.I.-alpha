@@ -89,15 +89,22 @@ function composerElement() {
 }
 
 // Read the unsent draft text from the composer.
+// Composer placeholders and ProseMirror can leave zero-width characters
+// behind; strip them so an "empty" draft is really empty (it used to add
+// "+ 1 draft" on a blank chat).
+function cleanDraft(text) {
+    return String(text || "").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+}
+
 function readDraftText() {
     const el = composerElement();
     if (!el) return "";
     try {
         if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-            return (el.value || "").trim();
+            return cleanDraft(el.value);
         }
         // contenteditable / rich-textarea / ProseMirror / etc.
-        return (el.innerText || el.textContent || "").trim();
+        return cleanDraft(el.innerText || el.textContent);
     } catch { return ""; }
 }
 

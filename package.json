@@ -1,0 +1,32 @@
+{
+  "name": "iko-context-hud",
+  "version": "0.2.0",
+  "description": "IKO AI Context Engineering HUD and session migration",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.js",
+    "test:migration": "node --test src/migration/tests/migration.test.js",
+    "test:sir": "node --test src/migration/tests/sir.test.js",
+    "test:pdf": "node --test src/migration/tests/pdf.test.js",
+    "test:ocr": "node --test src/migration/tests/ocr.test.js",
+    "test:retrieval": "node --test src/migration/tests/retrieval.test.js",
+    "test:claude": "node --test src/migration/tests/claude.test.js",
+    "test:composer": "node --test src/migration/tests/composer-io.test.js",
+    "test:fullhistory": "node --test src/migration/tests/full-history.test.js",
+    "test:chatthread": "node --test src/migration/tests/chat-thread.test.js",
+    "test": "node --test src/migration/tests/migration.test.js src/migration/tests/sir.test.js src/migration/tests/pdf.test.js src/migration/tests/ocr.test.js src/migration/tests/retrieval.test.js src/migration/tests/claude.test.js src/migration/tests/composer-io.test.js src/migration/tests/full-history.test.js src/migration/tests/chat-thread.test.js src/migration/tests/chatgpt-source-adapter.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "gpt-tokenizer": "^4.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "manifest_version": 3,
+  "name": "IKO Context HUD",
+  "version": "0.2.0",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://*.claude.ai/*",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://*.chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://*.gemini.google.com/*",
+    "https://perplexity.ai/*",
+    "https://*.perplexity.ai/*",
+    "https://copilot.microsoft.com/*",
+    "https://*.copilot.microsoft.com/*",
+    "https://m365.cloud.microsoft/*",
+    "https://*.m365.cloud.microsoft/*",
+    "https://grok.com/*",
+    "https://*.grok.com/*",
+    "https://x.com/*",
+    "https://*.x.com/*",
+    "https://chat.deepseek.com/*",
+    "https://*.deepseek.com/*",
+    "https://chat.mistral.ai/*",
+    "https://*.mistral.ai/*",
+    "https://poe.com/*",
+    "https://*.poe.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://*.claude.ai/*"
+      ],
+      "js": [
+        "dist/claude-content.js",
+        "dist/migration.js"
+      ],
+      "css": [
+        "dist/style.css",
+        "dist/migration.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://*.gemini.google.com/*",
+        "https://perplexity.ai/*",
+        "https://*.perplexity.ai/*",
+        "https://copilot.microsoft.com/*",
+        "https://*.copilot.microsoft.com/*",
+        "https://m365.cloud.microsoft/*",
+        "https://*.m365.cloud.microsoft/*",
+        "https://grok.com/*",
+        "https://*.grok.com/*",
+        "https://x.com/*",
+        "https://*.x.com/*",
+        "https://chat.deepseek.com/*",
+        "https://*.deepseek.com/*",
+        "https://chat.mistral.ai/*",
+        "https://*.mistral.ai/*",
+        "https://poe.com/*",
+        "https://*.poe.com/*"
+      ],
+      "js": [
+        "dist/content.js",
+        "dist/migration.js"
+      ],
+      "css": [
+        "dist/style.css",
+        "dist/migration.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://*.claude.ai/*"
+      ],
+      "js": [
+        "dist/claude-bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.chat.openai.com/*"
+      ],
+      "js": [
+        "dist/chatgpt-bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

@@ -1,0 +1,789 @@
+/* =============================================================
+   IKO — RETRO ARCADE DESIGN SYSTEM
+   Shared tokens. (Duplicated in migration.css so each injected
+   stylesheet is self-contained even if loaded alone.)
+   ============================================================= */
+
+:root {
+    --iko-black: #000000;
+    --iko-white: #ffffff;
+
+    --iko-sky: #91c9fa;
+    --iko-yellow: #ffd60a;
+    --iko-pink: #ff5eaa;
+    --iko-lime: #a3f542;
+    --iko-grass: #83d84f;
+    --iko-beige: #e5bf83;
+    --iko-red: #ff4d4d;
+
+    /* ---- semantic roles (these swap in dark mode) ---- */
+    --iko-ink: #000000;
+    /* outlines + hard shadows */
+    --iko-text: #000000;
+    /* body text on surfaces */
+    --iko-text-muted: #444444;
+    --iko-text-subtle: #555555;
+    --iko-placeholder: #8a8a8a;
+
+    --iko-bg: #91c9fa;
+    --iko-surface: #ffffff;
+    /* panels, cards, buttons */
+    --iko-surface-muted: #f5f5f5;
+    --iko-field: #ffffff;
+    /* inputs + tracks */
+    --iko-log-bg: #111111;
+    --iko-log-text: #e8e8e8;
+    --iko-scheme: light;
+    /* native select/scrollbar chrome */
+
+    --iko-border: 3px solid var(--iko-ink);
+    --iko-border-thin: 2px solid var(--iko-ink);
+
+    --iko-shadow-sm: 3px 3px 0 var(--iko-ink);
+    --iko-shadow-md: 5px 5px 0 var(--iko-ink);
+    --iko-shadow-lg: 8px 8px 0 var(--iko-ink);
+    --iko-shadow-hover: 3px 3px 0 var(--iko-ink);
+    --iko-shadow-pressed: 0 0 0 var(--iko-ink);
+
+    --iko-radius: 0px;
+    --iko-radius-small: 2px;
+
+    --iko-fast: 100ms ease-out;
+    --iko-normal: 160ms ease-out;
+
+    --iko-font-display:
+        "Barlow Condensed", "Arial Narrow", Impact, "Haettenschweiler",
+        "Franklin Gothic Bold", sans-serif;
+    --iko-font-body:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Arial, sans-serif;
+    --iko-font-mono:
+        "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* =============================================================
+   DARK THEME
+   Flipping --iko-ink inverts every outline, hard shadow and focus
+   ring in one move. The bright accents stay saturated (arcade
+   palette survives) and keep black text, which stays readable.
+   Toggled by the moon/sun button (data-iko-theme on <html>).
+
+   The ink is a warm "printed paper" tone rather than pure white:
+   pure white at 3px outlines + hard shadows glares, and a warm
+   off-white sits better next to the yellow/pink/lime accents.
+   ============================================================= */
+
+:root[data-iko-theme="dark"] {
+    --iko-ink: #f0e2bd;
+
+    --iko-text: #f4ecd9;
+    --iko-text-muted: #c7bda5;
+    --iko-text-subtle: #a89e88;
+    --iko-placeholder: #8a8170;
+
+    --iko-bg: #0d0c0a;
+    --iko-surface: #171612;
+    --iko-surface-muted: #221f19;
+    --iko-field: #0c0b09;
+    --iko-log-bg: #080706;
+    --iko-log-text: #ece3cf;
+    --iko-scheme: dark;
+}
+
+@keyframes iko-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.2;
+    }
+}
+
+
+/* =========================================
+   IKO CONTEXT HUD
+   ========================================= */
+
+#iko-context-hud {
+    position: fixed;
+
+    /* composer-docked by JS (Tally-style); this corner is only the
+       pre-paint fallback — NOT !important so inline left/top wins */
+    right: 24px;
+    bottom: 105px;
+
+    left: auto;
+    top: auto;
+
+    width: 300px;
+    max-width: calc(100vw - 32px);
+
+    box-sizing: border-box;
+
+    z-index: 2147483640 !important;
+
+    pointer-events: auto;
+
+    font-family: var(--iko-font-body);
+
+    color: var(--iko-text);
+}
+
+#iko-context-hud *,
+#iko-context-hud *::before,
+#iko-context-hud *::after {
+    box-sizing: border-box;
+}
+
+/* Never let an author display rule beat the hidden attribute. */
+#iko-context-hud [hidden] {
+    display: none !important;
+}
+
+
+/* MAIN CARD — bright sticker with a hard black shadow */
+
+#iko-context-hud .iko-hud-main {
+    padding: 10px;
+
+    border: var(--iko-border);
+
+    border-radius: var(--iko-radius);
+
+    background: var(--iko-surface);
+
+    box-shadow: var(--iko-shadow-md);
+
+    transition:
+        transform var(--iko-normal),
+        box-shadow var(--iko-normal);
+}
+
+
+/* HEADER — yellow strip, dragged to move the HUD */
+
+#iko-context-hud .iko-hud-top {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: flex-start;
+
+    gap: 8px;
+
+    margin: -10px -10px 10px;
+    padding: 8px 10px;
+
+    border-bottom: var(--iko-border-thin);
+
+    background: var(--iko-yellow);
+
+    cursor: move !important;
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+#iko-context-hud.iko-dragging {
+    opacity: 0.94;
+    transition: none !important;
+}
+
+
+#iko-context-hud .iko-hud-brand {
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    /* sits on the yellow strip, so it stays black in both themes */
+    color: var(--iko-black);
+
+    font-family: var(--iko-font-display);
+
+    font-size: 15px;
+    font-weight: 900;
+
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+
+#iko-context-hud .iko-hud-dot {
+    width: 10px;
+    height: 10px;
+
+    border: 2px solid var(--iko-black);
+
+    border-radius: 0;
+
+    background: var(--iko-pink);
+
+    box-shadow: none;
+}
+
+
+#iko-context-hud .iko-hud-platform {
+    margin-left: auto;
+
+    padding: 2px 6px;
+
+    border: var(--iko-border-thin);
+
+    background: var(--iko-surface);
+    color: var(--iko-text);
+
+    font-family: var(--iko-font-mono);
+
+    font-size: 8px;
+    font-weight: 700;
+
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+
+/* STATS — two mini outlined tiles */
+
+#iko-context-hud .iko-hud-stats {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
+
+    gap: 7px;
+}
+
+
+#iko-context-hud .iko-hud-stat {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 1px;
+
+    padding: 6px 7px;
+
+    border: var(--iko-border-thin);
+
+    background: var(--iko-surface-muted);
+}
+
+
+#iko-context-hud .iko-hud-stat span {
+    font-size: 8px;
+    font-weight: 800;
+
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+
+    color: var(--iko-text);
+}
+
+
+#iko-context-hud .iko-hud-stat strong {
+    font-family: var(--iko-font-display);
+
+    font-size: 20px;
+    font-weight: 900;
+
+    line-height: 1;
+
+    overflow: hidden;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
+
+    color: var(--iko-text);
+}
+
+
+/* LOADING — blinking block + label */
+
+#iko-context-hud .iko-hud-loading {
+    display: flex;
+
+    align-items: center;
+
+    gap: 6px;
+
+    margin-top: 8px;
+
+    font-size: 9px;
+    font-weight: 800;
+
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+
+    color: var(--iko-text);
+}
+
+#iko-context-hud .iko-hud-loading[hidden] {
+    display: none !important;
+}
+
+#iko-context-hud .iko-hud-loading::before {
+    content: "";
+
+    flex: 0 0 auto;
+
+    width: 9px;
+    height: 9px;
+
+    border: 2px solid var(--iko-ink);
+
+    background: var(--iko-yellow);
+
+    animation: iko-blink 700ms steps(2, end) infinite;
+}
+
+
+/* PROGRESS — chunky outlined meter */
+
+#iko-context-hud .iko-hud-progress {
+    width: 100%;
+    height: 10px;
+
+    margin-top: 8px;
+
+    overflow: hidden;
+
+    border: var(--iko-border-thin);
+
+    border-radius: 0;
+
+    background: var(--iko-field);
+}
+
+
+#iko-context-hud #iko-hud-progress-bar {
+    width: 0;
+
+    height: 100%;
+
+    border-radius: 0;
+
+    background: var(--iko-ink);
+
+    transition: width 300ms ease-out;
+}
+
+#iko-context-hud .iko-hud-alert-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: var(--iko-border-thin);
+    color: var(--iko-text-muted);
+    font-size: 9px;
+    font-weight: 600;
+}
+
+#iko-context-hud #iko-hud-alert-threshold {
+    padding: 2px 4px;
+    border: var(--iko-border-thin);
+    border-radius: 0;
+    background: var(--iko-field);
+    color: var(--iko-ink);
+    font: inherit;
+    font-size: 9px;
+    cursor: pointer;
+}
+
+
+/* STATUS */
+
+#iko-context-hud .iko-hud-status {
+    margin-top: 7px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    line-height: 1.35;
+
+    font-size: 9px;
+    font-weight: 600;
+
+    color: var(--iko-text-muted);
+
+    min-height: 12px;
+}
+
+
+/* ACTIONS — tactile outlined buttons */
+
+#iko-context-hud .iko-hud-actions {
+    display: flex !important;
+    gap: 6px !important;
+    margin-top: 9px !important;
+}
+
+#iko-context-hud .iko-hud-actions button {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+
+    height: 34px !important;
+
+    padding: 0 6px !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 5px !important;
+
+    border: var(--iko-border-thin) !important;
+    border-radius: 0 !important;
+
+    background: var(--iko-surface) !important;
+    color: var(--iko-text) !important;
+
+    box-shadow: var(--iko-shadow-sm) !important;
+
+    font-family: var(--iko-font-body) !important;
+
+    font-size: 10px !important;
+    font-weight: 800 !important;
+
+    letter-spacing: 0.01em !important;
+
+    cursor: pointer !important;
+
+    transition:
+        transform var(--iko-fast),
+        box-shadow var(--iko-fast),
+        background-color var(--iko-fast),
+        color var(--iko-fast) !important;
+}
+
+#iko-context-hud .iko-hud-actions button:hover:not(:disabled) {
+    transform: translate(2px, 2px) !important;
+    box-shadow: 2px 2px 0 var(--iko-ink) !important;
+}
+
+#iko-context-hud .iko-hud-actions button:active:not(:disabled) {
+    transform: translate(3px, 3px) !important;
+    box-shadow: 0 0 0 var(--iko-ink) !important;
+}
+
+#iko-context-hud .iko-hud-actions button:focus-visible {
+    outline: 3px dashed var(--iko-ink) !important;
+    outline-offset: 3px !important;
+}
+
+#iko-context-hud .iko-hud-actions button:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+}
+
+/* Semantic colour roles — one per action, never random.
+   The accent fills keep BLACK text in both themes (the bright yellow/lime are
+   the same value in light and dark), so the colour must be pinned here rather
+   than inherited from the theme-aware base rule. */
+#iko-context-hud #iko-hud-migrate {
+    background: var(--iko-yellow) !important;
+    color: var(--iko-black) !important;
+}
+
+#iko-context-hud #iko-hud-optimize {
+    background: var(--iko-lime) !important;
+    color: var(--iko-black) !important;
+}
+
+/* neutral action: follows the theme surface + text tokens */
+#iko-context-hud #iko-hud-files {
+    background: var(--iko-surface) !important;
+}
+
+#iko-context-hud .iko-hud-actions .iko-hud-icon {
+    width: 11px !important;
+    height: 11px !important;
+
+    flex: 0 0 auto !important;
+
+    display: block !important;
+
+    opacity: 1 !important;
+
+    stroke-width: 2.4;
+
+    transition: transform var(--iko-fast) !important;
+}
+
+#iko-context-hud .iko-hud-actions button:hover .iko-hud-icon {
+    transform: translateX(1px);
+}
+
+#iko-context-hud .iko-hud-actions .iko-btn-label {
+    min-width: 0 !important;
+
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+
+/* =========================================
+   IKO BOT — the yellow dock pill
+   ========================================= */
+
+#iko-bot {
+    position: fixed;
+
+    /* Fixed dock: bottom-right dead zone. Pure !important so no
+       drag/legacy spot can move it. */
+    right: 24px !important;
+    bottom: 22px !important;
+    left: auto !important;
+    top: auto !important;
+
+    height: 36px !important;
+    min-width: 0 !important;
+
+    padding: 0 13px !important;
+
+    display: flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+
+    border: var(--iko-border) !important;
+    border-radius: 0 !important;
+
+    background: var(--iko-yellow) !important;
+    color: var(--iko-black) !important;
+
+    font-family: var(--iko-font-display) !important;
+
+    font-size: 15px !important;
+    font-weight: 400 !important;
+
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+
+    box-shadow: var(--iko-shadow-md) !important;
+
+    cursor: grab !important;
+    touch-action: none !important;
+
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-user-drag: none !important;
+
+    z-index: 2147483645 !important;
+
+    transition:
+        transform var(--iko-fast),
+        box-shadow var(--iko-fast) !important;
+}
+
+#iko-bot.iko-dragging {
+    cursor: grabbing !important;
+    opacity: 0.94;
+    transition: none !important;
+}
+
+#iko-bot:hover {
+    transform: none !important;
+    box-shadow: 5px 5px 0 var(--iko-ink) !important;
+}
+
+#iko-bot:active {
+    transform: none !important;
+    box-shadow: 2px 2px 0 var(--iko-ink) !important;
+}
+
+#iko-bot:focus-visible {
+    outline: 3px dashed var(--iko-ink) !important;
+    outline-offset: 4px !important;
+}
+
+#iko-bot .iko-bot-dot {
+    width: 10px !important;
+    height: 10px !important;
+
+    border: 2px solid var(--iko-black) !important;
+    border-radius: 0 !important;
+
+    background: var(--iko-pink) !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Hide legacy separate launchers — unified into bot+HUD */
+#iko-migration-launcher,
+#iko-optimizer-launcher {
+    display: none !important;
+}
+
+
+/* =========================================
+   THEME TOGGLE (moon / sun)
+   Light shows the moon (click -> dark),
+   dark shows the sun (click -> light).
+   ========================================= */
+
+.iko-theme-toggle {
+    position: relative;
+
+    width: 32px;
+    height: 32px;
+
+    flex: 0 0 32px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 0;
+
+    border: var(--iko-border-thin);
+    border-radius: var(--iko-radius);
+
+    background: var(--iko-surface);
+    color: var(--iko-text);
+
+    cursor: pointer;
+
+    box-shadow: var(--iko-shadow-sm);
+
+    transition:
+        transform var(--iko-fast),
+        box-shadow var(--iko-fast),
+        background-color var(--iko-fast),
+        color var(--iko-fast);
+}
+
+.iko-theme-toggle:hover {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 var(--iko-ink);
+}
+
+.iko-theme-toggle:active {
+    transform: translate(3px, 3px);
+    box-shadow: 0 0 0 var(--iko-ink);
+}
+
+.iko-theme-toggle:focus-visible {
+    outline: 3px dashed var(--iko-ink);
+    outline-offset: 3px;
+}
+
+.iko-theme-toggle .iko-theme-icon {
+    display: none;
+
+    width: 15px;
+    height: 15px;
+
+    flex: 0 0 auto;
+}
+
+.iko-theme-toggle .iko-theme-moon {
+    display: block;
+}
+
+:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-moon {
+    display: none;
+}
+
+:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-sun {
+    display: block;
+}
+
+/* compact variant used in the HUD header strip */
+.iko-theme-toggle.iko-theme-toggle-sm {
+    width: 24px !important;
+    height: 24px !important;
+
+    flex: 0 0 24px !important;
+
+    box-shadow: 2px 2px 0 var(--iko-ink) !important;
+}
+
+.iko-theme-toggle.iko-theme-toggle-sm .iko-theme-icon {
+    width: 12px !important;
+    height: 12px !important;
+}
+
+.iko-theme-toggle.iko-theme-toggle-sm:hover {
+    transform: translate(1px, 1px) !important;
+    box-shadow: 1px 1px 0 var(--iko-ink) !important;
+}
+
+.iko-theme-toggle.iko-theme-toggle-sm:active {
+    transform: translate(2px, 2px) !important;
+    box-shadow: 0 0 0 var(--iko-ink) !important;
+}
+
+/* IKO permanent HUD layout fix */
+#iko-context-hud {
+    display: block;
+    width: 300px !important;
+    min-width: 270px !important;
+    max-width: calc(100vw - 32px) !important;
+    height: auto !important;
+    box-sizing: border-box !important;
+}
+
+#iko-context-hud .iko-hud-main {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+}
+
+#iko-context-hud .iko-hud-top {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    /* Keep the negative side margins in the base rule: auto width lets the
+       yellow strip span the card's full outer width. */
+    width: auto !important;
+}
+
+#iko-context-hud .iko-hud-stats {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 7px !important;
+    width: 100% !important;
+}
+
+#iko-context-hud .iko-hud-stat {
+    min-width: 0 !important;
+}
+
+#iko-context-hud .iko-hud-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    width: 100% !important;
+}
+
+#iko-context-hud .iko-hud-actions>button {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+}
+
+
+/* Respect the user's motion preference (scoped — never touches the host page). */
+@media (prefers-reduced-motion: reduce) {
+
+    #iko-context-hud,
+    #iko-context-hud *,
+    #iko-context-hud *::before,
+    #iko-context-hud *::after,
+    #iko-bot,
+    #iko-bot *::before,
+    #iko-bot *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -2,7 +2,7 @@
 
 IKO is a Chrome extension that estimates conversation context and helps move chats between supported AI platforms.
 
-**Repository:** [Dhanraj2526/IKO-Extension-dhanu](https://github.com/Dhanraj2526/IKO-Extension-dhanu)
+**Repository:** [BEEdxd/IKO-Extension-for-your-A.I.-alpha](https://github.com/BEEdxd/IKO-Extension-for-your-A.I.-alpha)
 
 ## Features
 

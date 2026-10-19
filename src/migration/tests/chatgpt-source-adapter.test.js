@@ -227,6 +227,40 @@ function emptyShellDom() {
     return makeEl("main", { innerText: "Ask anything about your data", children: [composer] });
 }
 
+// ChatGPT 2026 app shell where the conversation lives OUTSIDE <main>:
+// <main> is pure chrome (titlebar + composer, tiny innerText) while the real
+// thread sits in a separate container elsewhere in <body>. Renamed attributes,
+// no data-message-author-role, no conversation-turn testids. This is the
+// exact shape behind the "reader: none/thread-too-small(98)" error: the old
+// code returned early on the small <main> and never deep-scanned <body>.
+function threadOutsideMainDom() {
+    const turn = (text, marker) => {
+        const el = makeEl("div", { attrs: { "data-turn-key": marker }, innerText: "" });
+        append(el, makeEl("div", { text, innerText: "" }));
+        return el;
+    };
+    const thread = makeEl("div", {
+        attrs: { "data-app-shell-thread-root": "" },
+        innerText: "",
+        children: [
+            turn(LONG_USER, "1"),
+            turn(LONG_ANSWER, "2"),
+            turn(LONG_USER + "And iteratively?", "3")
+        ]
+    });
+    const titlebar = makeEl("div", {
+        attrs: { "data-app-shell-main-titlebar": "" },
+        text: "ChatGPT", innerText: "ChatGPT"
+    });
+    const composer = makeEl("div", {
+        attrs: { "data-composer-placement": "" },
+        text: "Ask anything", innerText: "Ask anything"
+    });
+    const main = makeEl("main", { innerText: "ChatGPT", children: [titlebar, composer] });
+    const body = makeEl("div", { innerText: "", children: [main, thread] });
+    return body;
+}
+
 function buildBridgePayload() {
     return {
         conversation_id: "newappshell1234",
@@ -302,6 +336,22 @@ test("app-shell DOM with renamed markup prepares via the shared reader", async (
         assert.ok(
             session.messages[0].raw.strategy.startsWith("thread-reader:"),
             "the message should carry the shared-reader strategy"
+        );
+    });
+});
+
+test("conversation outside <main> (app shell) is found by deep-scan fallback", async () => {
+    await withDom(threadOutsideMainDom(), null, async () => {
+        const session = await new ChatGPTSourceAdapter().extractSession();
+        assert.equal(session.platform, "chatgpt");
+        assert.ok(session.messages.length >= 1, "deep scan should find the conversation outside <main>");
+        assert.ok(
+            session.messages.some(message => message.content.includes("reverse a linked list")),
+            "the conversation text should be present"
+        );
+        assert.ok(
+            session.messages.some(m => m.raw.strategy && m.raw.strategy.startsWith("thread-reader:thread")),
+            "the message should come from the shared reader (deep-scan)"
         );
     });
 });

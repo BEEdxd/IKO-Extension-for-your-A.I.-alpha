@@ -157,10 +157,8 @@ async function tryBridge() {
     if (cached) {
         // Never migrate another conversation's payload: the bridge can still
         // hold the previous chat while this tab shows a new one.
-        const cachedValid = cached === b?.latestValidConversation;
-        const payloadId = String(cached?.conversation_id ||
-            (cachedValid ? b?.latestValidConversationId : b?.latestConversationId) || "").slice(0, 64);
-        if (id && payloadId === id) {
+        const payloadId = String(cached?.conversation_id || "").slice(0, 64);
+        if (!payloadId || !id || payloadId === id) {
             const parsed = parseBridgeData(cached);
             if (parsed?.length) {
                 log("info", `bridge yielded ${parsed.length} messages`, {});
@@ -168,7 +166,7 @@ async function tryBridge() {
             }
             log("warn", "bridge data present but unparsable", { keys: allKeys(cached) });
         } else {
-            log("warn", "bridge payload cannot be verified for the open conversation — ignoring", { payloadId, id });
+            log("warn", "bridge holds another conversation — ignoring", { payloadId, id });
         }
     }
     // Direct fetch fallback: same-origin backend-api carries auth cookies.
@@ -189,8 +187,6 @@ async function tryBridge() {
                         continue;
                     }
                     const data = await r.json();
-                    // The user may switch chats while the request is in flight.
-                    if (conversationId() !== id) return null;
                     const parsed = parseBridgeData(data);
                     if (parsed?.length) {
                         // Keep the bridge's "best payload so far" pointers in
@@ -198,9 +194,8 @@ async function tryBridge() {
                         try {
                             const bridge = globalThis.window.IKO.chatgptBridge;
                             bridge.latestConversation = data;
-                            if (bridge.latestValidConversationId !== id || parsed.length > (bridge.latestValidMessages || 0)) {
+                            if (parsed.length > (bridge.latestValidMessages || 0)) {
                                 bridge.latestValidConversation = data;
-                                bridge.latestValidConversationId = id;
                                 bridge.latestValidMessages = parsed.length;
                             }
                         } catch { /* ignore */ }
@@ -287,16 +282,7 @@ class ChatGPTSourceAdapter extends SourceAdapter {
     constructor() { super("ChatGPT"); }
 
     async extractSession() {
-        const sourceConversationId = conversationId();
-        if (!sourceConversationId) {
-            throw new AdapterError("Open a specific ChatGPT conversation before preparing a migration.");
-        }
-        const assertSourceUnchanged = () => {
-            if (conversationId() !== sourceConversationId) {
-                throw new AdapterError("The source chat changed while IKO was preparing it. Reopen the intended chat and prepare the migration again.");
-            }
-        };
-        log("info", "extract start", { url: location.href, title: document.title, conversationId: sourceConversationId });
+        log("info", "extract start", { url: location.href, title: document.title });
 
         // 1) Prefer API (bridge / direct fetch) — immune to app-shell DOM changes.
         //    Some endpoints paginate, so the DOM pass below may still be fuller.
@@ -307,7 +293,6 @@ class ChatGPTSourceAdapter extends SourceAdapter {
         } catch (e) {
             log("warn", "bridge path failed, falling back to DOM", { error: String(e?.message || e).slice(0, 300) });
         }
-        assertSourceUnchanged();
 
         // 2) Lazy history: walk the thread to the top so ALL turns render in the
         //    DOM (ChatGPT mounts only the last visible messages on load).
@@ -322,7 +307,6 @@ class ChatGPTSourceAdapter extends SourceAdapter {
         }
 
         await new Promise(r => setTimeout(r, 400));
-        assertSourceUnchanged();
 
         const selectors = [
             "[data-message-author-role]",
@@ -458,7 +442,7 @@ class ChatGPTSourceAdapter extends SourceAdapter {
             log("info", `using API data (${apiMessages.length} messages)`, {});
             return {
                 platform: "chatgpt",
-                conversationId: sourceConversationId,
+                conversationId: conversationId() || `chatgpt-${Date.now()}`,
                 title: document.title || "ChatGPT Conversation",
                 model: null, createdAt: null, updatedAt: null,
                 extractorVersion: "iko-chatgpt-api-1",
@@ -473,7 +457,7 @@ class ChatGPTSourceAdapter extends SourceAdapter {
 
         return {
             platform: "chatgpt",
-            conversationId: sourceConversationId,
+            conversationId: conversationId() || `chatgpt-${Date.now()}`,
             title: document.title || "ChatGPT Conversation",
             model: null, createdAt: null, updatedAt: null,
             extractorVersion: "iko-chatgpt-dom-4-fullhistory",

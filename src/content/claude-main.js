@@ -16,12 +16,23 @@ let counting = false;
 // per-chat state below, so switching chats re-counts without a reload.
 let lastKey = "";
 let lastSignature = "";
+let lastDraftSignature = "";
+let lastDraftText = "";
 // The bridge caches the LAST conversation the page fetched and replays it on
 // every refresh request, so a stale payload must never be counted.
 let highWater = { key: "", tokens: 0 };
 
 // Universal budgets/prices mirror platforms.js; model slug refines them.
 const CLAUDE_DEFAULT = { budget: 200000, price: 3.0, label: "Claude" };
+
+// One message can be huge. The tokenizer runs at ~35M chars/s, so this is a
+// guard against pathological pages.
+const MAX_MESSAGE_CHARS = 400000;
+
+// Debounce for composer typing so we don't re-tokenise on every keystroke,
+// but still reflect the draft within ~200 ms of the user stopping.
+let draftTimer = null;
+const DRAFT_DEBOUNCE_MS = 200;
 function detectClaudeModel(conversation) {
     const raw = String(conversation?.model || "").toLowerCase();
     if (raw.includes("opus")) return { budget: 200000, price: 15.0, label: "Claude Opus" };
@@ -95,8 +106,83 @@ function domMessages() {
     } catch { return []; }
 }
 
+// --- composer / draft tracking (Claude) -------------------------------------
+
+function composerElement() {
+    if (window.IKOComposer?.findComposer) {
+        try { return window.IKOComposer.findComposer(); } catch { return null; }
+    }
+    return null;
+}
+
+function readDraftText() {
+    const el = composerElement();
+    if (!el) return "";
+    try {
+        if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+            return el.value || "";
+        }
+        return el.innerText || el.textContent || "";
+    } catch { return ""; }
+}
+
+function draftTokenCount(text) {
+    if (!text) return 0;
+    try {
+        // Claude uses the same local chars/4 estimate as claude-api.js.
+        return Math.max(0, Math.ceil(String(text).slice(0, MAX_MESSAGE_CHARS).length / 4));
+    } catch { return 0; }
+}
+
+function draftOverlapsConversation(draft, messages) {
+    if (!draft || !messages.length) return false;
+    const last = messages[messages.length - 1];
+    if (!last) return false;
+    const normalized = (s) => String(s || "").replace(/\s+/g, " ").trim();
+    return normalized(draft) === normalized(last.content);
+}
+
+function scheduleDraftUpdate() {
+    if (draftTimer) return;
+    draftTimer = setTimeout(() => {
+        draftTimer = null;
+        updateClaude();
+    }, DRAFT_DEBOUNCE_MS);
+}
+
+function setupComposerWatcher() {
+    if (composerObserver) {
+        try { composerObserver.disconnect(); } catch { /* ignore */ }
+        composerObserver = null;
+    }
+
+    const el = composerElement();
+    if (!el) return;
+
+    const onInput = () => scheduleDraftUpdate();
+    el.addEventListener("input", onInput, { passive: true });
+    el.addEventListener("change", onInput, { passive: true });
+    el.addEventListener("keyup", onInput, { passive: true });
+    el.addEventListener("paste", onInput, { passive: true });
+
+    composerObserver = new MutationObserver((records) => {
+        for (const record of records) {
+            if (isOwnUi(record.target)) continue;
+            scheduleDraftUpdate();
+            return;
+        }
+    });
+    try {
+        composerObserver.observe(el, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    } catch { /* ignore */ }
+}
+
 // Re-tokenising an unchanged thread on every poll/tick burns CPU for nothing.
-function signature(label, messages, bridgeCount, bridgeTokens) {
+function signature(label, messages, bridgeCount, bridgeTokens, draftText, draftTok) {
     let hash = 2166136261;
     const mix = (text) => {
         for (let i = 0; i < text.length; i++) {
@@ -104,8 +190,9 @@ function signature(label, messages, bridgeCount, bridgeTokens) {
             hash = Math.imul(hash, 16777619);
         }
     };
-    mix(`${label}|${messages.length}|${bridgeCount}|${bridgeTokens}`);
+    mix(`${label}|${messages.length}|${bridgeCount}|${bridgeTokens}|${draftTok}`);
     for (const message of messages) mix(message.content);
+    mix(draftText || "");
     return (hash >>> 0).toString(16);
 }
 
@@ -118,6 +205,8 @@ async function updateClaude() {
     if (key !== lastKey) {
         lastKey = key;
         lastSignature = "";
+        lastDraftSignature = "";
+        lastDraftText = "";
         highWater = { key, tokens: 0 };
     }
 
@@ -131,15 +220,26 @@ async function updateClaude() {
     // this conversation; the DOM reading below still counts while waiting.
     if (!conversation) window.IKO?.claudeBridge?.requestConversationRefresh?.();
 
-    if (!bridgeMessages.length && !dom.length) {
+    // --- draft reading: unsent text in the composer -----------------------
+    const draftText = readDraftText();
+    const draftOverlaps = draftOverlapsConversation(draftText, dom.length ? dom : bridgeMessages);
+    const draftTok = draftOverlaps ? 0 : draftTokenCount(draftText);
+
+    if (!bridgeMessages.length && !dom.length && !draftText) {
         lastSignature = "";
+        lastDraftSignature = "";
+        lastDraftText = "";
         window.IKO.latestData = {
             platform: "Claude",
             tokens: 0,
             messageCount: 0,
             usagePercentage: 0,
             tokenizer: "Local estimate",
-            status: "Waiting for Claude messages"
+            status: "Waiting for Claude messages",
+            draftTokens: 0,
+            projectedTokens: 0,
+            projectedUsagePercentage: 0,
+            draftOverlap: false
         };
         updateUI(window.IKO.latestData);
         return;
@@ -149,8 +249,8 @@ async function updateClaude() {
     const bridgeTokens = bridgeMessages.length
         ? await countClaudeTokens({ messages: bridgeMessages })
         : 0;
-    const sig = signature(model.label, dom.length ? dom : bridgeMessages, bridgeMessages.length, bridgeTokens);
-    if (sig === lastSignature && window.IKO.latestData) {
+    const sig = signature(model.label, dom.length ? dom : bridgeMessages, bridgeMessages.length, bridgeTokens, draftText, draftTok);
+    if (sig === lastSignature && lastDraftSignature === draftText && window.IKO.latestData) {
         // Nothing new: keep the HUD in sync without re-tokenising.
         updateUI(window.IKO.latestData);
         return;
@@ -173,13 +273,21 @@ async function updateClaude() {
         const tokens = Math.max(domTokens, bridgeTokens, highWater.tokens);
         highWater.tokens = tokens;
 
+        // Projected context = conversation + unsent draft (deduped against
+        // last message to avoid double-counting).
+        const projectedTokens = tokens + draftTok;
         const usedBridge = bridgeTokens > domTokens;
         const cost = tokens / 1000000 * model.price;
+        const projectedCost = projectedTokens / 1000000 * model.price;
         const pct = Math.min(100, Math.round((tokens / model.budget) * 100));
+        const projectedPct = Math.min(100, Math.round((projectedTokens / model.budget) * 100));
         const health = pct >= 95 ? "⚠ Context critical — migrate or summarize"
             : pct >= 80 ? "⚠ Context filling — consider migrate"
                 : usedBridge ? "Full conversation"
                     : "Local token estimate (no IKO server required)";
+
+        const draftLabel = draftTok > 0 ? ` + ${draftTok} draft` : "";
+        const projectedLabel = draftTok > 0 ? ` (${projectedTokens} projected)` : "";
 
         window.IKO.latestData = {
             platform: model.label,
@@ -189,10 +297,16 @@ async function updateClaude() {
             tokenizer: "Local estimate",
             cost,
             source: usedBridge ? "conversation" : "selectors",
-            status: `${health} · ~$${cost.toFixed(3)}`
+            status: `${health}${draftLabel}${projectedLabel} · ~$${cost.toFixed(3)}`,
+            draftTokens: draftTok,
+            projectedTokens,
+            projectedUsagePercentage: projectedPct,
+            draftOverlap: draftOverlaps
         };
 
         lastSignature = sig;
+        lastDraftSignature = draftText;
+        lastDraftText = draftText;
         updateUI(window.IKO.latestData);
     } catch (error) {
         console.error("[IKO Claude] Token count failed:", error);
@@ -202,7 +316,11 @@ async function updateClaude() {
             messageCount: 0,
             usagePercentage: 0,
             tokenizer: "Local estimate",
-            status: "Token count unavailable"
+            status: "Token count unavailable",
+            draftTokens: draftTok,
+            projectedTokens: draftTok,
+            projectedUsagePercentage: 0,
+            draftOverlap: false
         });
     } finally {
         window.IKO.ui?.setLoading(false);
@@ -215,6 +333,7 @@ async function updateClaude() {
 // answer streams, and a chat switch does not wait for the 2.5 s poll. Reads are
 // throttled and signature-gated, so idle pages stay free.
 let observer = null;
+let composerObserver = null;
 let domTimer = null;
 let domLast = 0;
 let urlTimer = null;
@@ -264,7 +383,33 @@ function watchUrl() {
         if (location.href === lastHref) return;
         lastHref = location.href;
         updateClaude();
+        // The composer element may have been replaced by the SPA navigation;
+        // re-wire input listeners so typing keeps updating the HUD.
+        setupComposerWatcher();
     }, 300);
+}
+
+// Intercept history.pushState / replaceState / popstate so SPA chat switches
+// cause an immediate re-count.
+function interceptNavigation() {
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    function onNavigation() {
+        scheduleUpdate(100);
+    }
+
+    history.pushState = function (...args) {
+        originalPushState.apply(this, args);
+        onNavigation();
+    };
+
+    history.replaceState = function (...args) {
+        originalReplaceState.apply(this, args);
+        onNavigation();
+    };
+
+    window.addEventListener("popstate", onNavigation);
 }
 
 function initialize() {
@@ -287,6 +432,8 @@ function initialize() {
 
     watchPage();
     watchUrl();
+    interceptNavigation();
+    setupComposerWatcher();
     document.addEventListener("visibilitychange", () => {
         if (!document.hidden) updateClaude();
     });

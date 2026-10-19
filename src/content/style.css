@@ -17,24 +17,19 @@
     --iko-red: #ff4d4d;
 
     /* ---- semantic roles (these swap in dark mode) ---- */
-    --iko-ink: #000000;
-    /* outlines + hard shadows */
-    --iko-text: #000000;
-    /* body text on surfaces */
+    --iko-ink: #000000;          /* outlines + hard shadows */
+    --iko-text: #000000;         /* body text on surfaces */
     --iko-text-muted: #444444;
     --iko-text-subtle: #555555;
     --iko-placeholder: #8a8a8a;
 
     --iko-bg: #91c9fa;
-    --iko-surface: #ffffff;
-    /* panels, cards, buttons */
+    --iko-surface: #ffffff;      /* panels, cards, buttons */
     --iko-surface-muted: #f5f5f5;
-    --iko-field: #ffffff;
-    /* inputs + tracks */
+    --iko-field: #ffffff;        /* inputs + tracks */
     --iko-log-bg: #111111;
     --iko-log-text: #e8e8e8;
-    --iko-scheme: light;
-    /* native select/scrollbar chrome */
+    --iko-scheme: light;         /* native select/scrollbar chrome */
 
     --iko-border: 3px solid var(--iko-ink);
     --iko-border-thin: 2px solid var(--iko-ink);
@@ -91,15 +86,8 @@
 }
 
 @keyframes iko-blink {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.2;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
 }
 
 
@@ -118,7 +106,7 @@
     left: auto;
     top: auto;
 
-    width: 300px;
+    width: 250px;
     max-width: calc(100vw - 32px);
 
     box-sizing: border-box;
@@ -371,41 +359,16 @@
     transition: width 300ms ease-out;
 }
 
-#iko-context-hud .iko-hud-alert-control {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 5px;
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: var(--iko-border-thin);
-    color: var(--iko-text-muted);
-    font-size: 9px;
-    font-weight: 600;
-}
-
-#iko-context-hud #iko-hud-alert-threshold {
-    padding: 2px 4px;
-    border: var(--iko-border-thin);
-    border-radius: 0;
-    background: var(--iko-field);
-    color: var(--iko-ink);
-    font: inherit;
-    font-size: 9px;
-    cursor: pointer;
-}
-
 
 /* STATUS */
 
 #iko-context-hud .iko-hud-status {
     margin-top: 7px;
+
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    white-space: normal;
-    line-height: 1.35;
+
+    white-space: nowrap;
+    text-overflow: ellipsis;
 
     font-size: 9px;
     font-weight: 600;
@@ -497,9 +460,7 @@
 }
 
 /* neutral action: follows the theme surface + text tokens */
-#iko-context-hud #iko-hud-files {
-    background: var(--iko-surface) !important;
-}
+#iko-context-hud #iko-hud-files { background: var(--iko-surface) !important; }
 
 #iko-context-hud .iko-hud-actions .iko-hud-icon {
     width: 11px !important;
@@ -561,15 +522,14 @@
     font-family: var(--iko-font-display) !important;
 
     font-size: 15px !important;
-    font-weight: 400 !important;
+    font-weight: 900 !important;
 
     letter-spacing: 0.06em !important;
     text-transform: uppercase !important;
 
     box-shadow: var(--iko-shadow-md) !important;
 
-    cursor: grab !important;
-    touch-action: none !important;
+    cursor: pointer !important;
 
     user-select: none !important;
     -webkit-user-select: none !important;
@@ -582,20 +542,14 @@
         box-shadow var(--iko-fast) !important;
 }
 
-#iko-bot.iko-dragging {
-    cursor: grabbing !important;
-    opacity: 0.94;
-    transition: none !important;
-}
-
 #iko-bot:hover {
-    transform: none !important;
-    box-shadow: 5px 5px 0 var(--iko-ink) !important;
+    transform: translate(2px, 2px) !important;
+    box-shadow: 3px 3px 0 var(--iko-ink) !important;
 }
 
 #iko-bot:active {
-    transform: none !important;
-    box-shadow: 2px 2px 0 var(--iko-ink) !important;
+    transform: translate(5px, 5px) !important;
+    box-shadow: 0 0 0 var(--iko-ink) !important;
 }
 
 #iko-bot:focus-visible {
@@ -617,10 +571,7 @@
 
 
 /* Hide legacy separate launchers — unified into bot+HUD */
-#iko-migration-launcher,
-#iko-optimizer-launcher {
-    display: none !important;
-}
+#iko-migration-launcher, #iko-optimizer-launcher { display: none !important; }
 
 
 /* =========================================
@@ -684,17 +635,10 @@
     flex: 0 0 auto;
 }
 
-.iko-theme-toggle .iko-theme-moon {
-    display: block;
-}
+.iko-theme-toggle .iko-theme-moon { display: block; }
 
-:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-moon {
-    display: none;
-}
-
-:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-sun {
-    display: block;
-}
+:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-moon { display: none; }
+:root[data-iko-theme="dark"] .iko-theme-toggle .iko-theme-sun { display: block; }
 
 /* compact variant used in the HUD header strip */
 .iko-theme-toggle.iko-theme-toggle-sm {
@@ -721,60 +665,9 @@
     box-shadow: 0 0 0 var(--iko-ink) !important;
 }
 
-/* IKO permanent HUD layout fix */
-#iko-context-hud {
-    display: block;
-    width: 300px !important;
-    min-width: 270px !important;
-    max-width: calc(100vw - 32px) !important;
-    height: auto !important;
-    box-sizing: border-box !important;
-}
-
-#iko-context-hud .iko-hud-main {
-    display: block !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    box-sizing: border-box !important;
-}
-
-#iko-context-hud .iko-hud-top {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    /* Keep the negative side margins in the base rule: auto width lets the
-       yellow strip span the card's full outer width. */
-    width: auto !important;
-}
-
-#iko-context-hud .iko-hud-stats {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
-    gap: 7px !important;
-    width: 100% !important;
-}
-
-#iko-context-hud .iko-hud-stat {
-    min-width: 0 !important;
-}
-
-#iko-context-hud .iko-hud-actions {
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 6px !important;
-    width: 100% !important;
-}
-
-#iko-context-hud .iko-hud-actions>button {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
-}
-
 
 /* Respect the user's motion preference (scoped — never touches the host page). */
 @media (prefers-reduced-motion: reduce) {
-
     #iko-context-hud,
     #iko-context-hud *,
     #iko-context-hud *::before,

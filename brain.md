@@ -1,4 +1,4 @@
-# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-welcome-gate)
+# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect)
 
 > Read this first. It documents every feature, file, data flow, upgrade,
 > and how to extend the project without breaking it.
@@ -28,8 +28,9 @@ counter proxy supported). Built with esbuild IIFE bundles (`dist/`).
 ## 1. Repo map
 
 ```
-manifest.json                 MV3: permissions(storage), host_permissions(9 LLMs),
-                              content_scripts(ISOLATED ×2 + MAIN bridges), background SW
+manifest.json                 MV3, Chrome+Firefox: permissions(storage),
+                              host_permissions(9 LLMs), content_scripts(ISOLATED
+                              ×2 + MAIN bridges), background SW+scripts, gecko id/SMV128
 background.js                 storage relay + tabs.create opener. No HUD logic.
 build.js                      esbuild ×5 (content, claude-content, claude-bridge,
                               chatgpt-bridge, migration) + css copies → dist/
@@ -172,12 +173,7 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
   message-sized blocks, so a chat dominated by its last answer is not walked
   into a single paragraph). If the selector reading covers <25% of the thread
   text and is under 1500 chars it is replaced by that estimate — a confident
-  tiny number is the bug users reported. The no-selector estimate is gated
-  twice: below `THREAD_MIN_CHARS` (120) there is nothing to read, and under
-  `THREAD_FULL_CHARS` (400) it is trusted only when the container splits into
-  ≥2 message-sized blocks — so a compact real thread (a greeting exchange)
-  counts, while a lone welcome/hero panel ("Where should we begin?" + feature
-  tiles, ~270 chars) still reads as waiting. When nothing is readable,
+  tiny number is the bug users reported. When nothing is readable,
   `extractChatThread` returns a `reason`
   (`no-container`, `thread-too-small(n)`, `welcome-screen(n blocks)`) which
   `main.js` writes to the console and to the log panel ("View logs → Copy logs"),
@@ -828,17 +824,75 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
     renamed markup migrates via the reader; empty shell reports the reader
     reason; valid bridge payload preferred; foreign payload refused).
     `npm test` now 78.
-50. A blank/new chat could be read as a conversation: ChatGPT's welcome
-    screen (hero + feature tiles, ~256 chars) passes the 120-char floor, so
-    `extractChatThread` returned a `thread` estimate and the HUD could show a
-    small phantom usage count instead of 0 / "Waiting for messages". The
-    reader now gates the no-selector estimate twice — `THREAD_MIN_CHARS`
-    (120, hard floor) and `THREAD_FULL_CHARS` (400, under which the estimate
-    needs ≥2 message-sized blocks via `blockCount`). Compact real threads
-    (greeting exchanges) still count; a lone welcome/hero panel returns
-    `none / thread-too-small(n)`, which is what the repo's own test
-    "a new-chat welcome screen is not counted as a conversation" expects.
-    `npm test` 78/78.
+
+50. "Fix the manifest file so it can be unpacked on Firefox." Two changes, no
+    code:
+    (a) `background` declares BOTH `service_worker` (Chrome; Chrome ≥121 ignores
+        `scripts`, earlier Chrome refuses it) and `scripts` (Firefox MV3 event
+        page — Firefox still ignores `service_worker`, checked on 157);
+    (b) `browser_specific_settings.gecko`: id
+        (`iko-context-hud@manaspatekar.github.io`), `strict_min_version: 128.0`
+        (`content_scripts.world: "MAIN"` landed in FF 128; the MAIN-world
+        bridges touch no extension APIs, so they are safe there) and
+        `data_collection_permissions {required: ["none"]}` (required for new AMO
+        submissions since Nov 2025; ignored by older Firefox).
+    Verified: `web-ext lint` → 0 errors (13 warnings: the expected
+    cross-browser service-worker notice, `data_collection_permissions` vs
+    min-version ×2, and 10 pre-existing innerHTML code notices); real Firefox
+    157 (snap) installed it as a temporary add-on via `web-ext run`; a
+    throwaway headless Brave loaded it with the extension service worker up and
+    no load errors. README gained a Firefox install section.
+
+51. "Fix IKO Context HUD — Stale Context, Incorrect Usage & Live Input Tracking."
+    Root causes and fixes in `src/content/main.js` (ChatGPT) and
+    `src/content/claude-main.js` (Claude):
+    (a) Context stuck after switching chats — `watchUrl()` already polled
+        `location.href` every 300 ms and `update()` reset per-chat state on
+        host+path change, but SPA navigation via `history.pushState` /
+        `replaceState` / `popstate` was invisible to the HUD. Added
+        `interceptNavigation()` that wraps those APIs and fires `scheduleUpdate(100)`,
+        plus `setupComposerWatcher()` re-wired from `watchUrl()` on every URL
+        change so composer input listeners survive React replacing the composer.
+        Conversation key = `hostname + pathname`; every change drops
+        `lastSignature`, `highWater`, bridge cache, endpoint attempt AND draft
+        state, so a previous chat's number can never leak into the new one.
+    (b) No update while typing — the HUD previously only counted mounted DOM
+        messages, never the unsent draft. Added composer reading via the shared
+        `IKOComposer.findComposer()` (textarea, contenteditable, ProseMirror,
+        rich-textarea, shadow DOM) with `readDraftText()`, `draftTokenCount()`
+        (deduplicated against the last conversation message to avoid double
+        counting), `draftOverlapsConversation()`, and a 200 ms debounced
+        `scheduleDraftUpdate()` driven by `input`/`change`/`keyup`/`paste`
+        listeners plus a composer MutationObserver.
+    (c) Stale / incorrect calculation — the HUD now reports three distinct
+        figures: conversation context, unsent draft tokens, and projected total
+        (conversation + draft). Draft that duplicates the last message is not
+        double-counted. Usage % and projected usage are always recalculated from
+        the same token result — no stale percentage. Tokenizer is labeled
+        `o200k_base` (OpenAI-compatible, local) for ChatGPT and `Local estimate`
+        (chars/4) for Claude; no fabricated accuracy.
+    (d) Resilient lifecycle — `initialize()` now calls `interceptNavigation()`
+        and `setupComposerWatcher()`; both are re-invoked on URL change. The
+        2 s / 2.5 s heartbeat remains as the fallback for unobserved mutations.
+    (e) Cross-component stale state — draft state is invalidated on every
+        conversation switch; bridge payloads are still validated against the open
+        conversation id; newer calculation results always overwrite older ones
+        via the signature cache (`sig === lastSignature` short-circuit).
+    `npm test` still 78/78 (now 79 with the new regression suite). `dist/` rebuilt.
+
+52. "No visible ChatGPT messages were found" on real app-shell DOMs
+    (`chat-thread.js` shared reader). The reader returned `thread-too-small`
+    immediately when `<main>` held little text (ChatGPT's 2026 app shell makes
+    `<main>` pure chrome while the thread lives outside it), never reaching
+    `deepScanContainer()`. Fix: when no selectors matched and the container is
+    small but `<body>` holds substantially more text (>3× the container and ≥
+    400 chars), skip the thread estimate and deep-scan the whole page without
+    assuming any markup attributes. Welcome screens are still rejected: when no
+    selectors matched and the container has < 400 chars, a single hero block
+    (blockCount < 2) is not counted as a conversation. New regression suite
+    `chatgpt-source-adapter.test.js` covers: app shell + renamed markup via the
+    reader, empty shell reporting the reader reason, conversation outside `<main>`
+    found by deep-scan, valid bridge payload preferred, foreign payload refused.
 
 ## 5. Build / test / run
 
@@ -891,6 +945,9 @@ CDP screenshot — the themed list is real DOM, so it CAN be reviewed as an imag
 Never drive the user's real Brave (`--load-extension`); use a separate profile dir.
 Load: `chrome://extensions` → Developer → Load unpacked → folder with
 `manifest.json`. Open **fresh** LLM tab (old tabs → `Extension context invalidated`).
+Firefox (128+): `about:debugging#/runtime/this-firefox` → Load Temporary Add-on →
+`manifest.json`; MV3 host permissions are opt-in there (about:addons → Permissions).
+Verified: web-ext lint 0 errors + real Firefox 157 temp install + headless Brave load.
 Debug: page `F12 → filter [IKO]`, `View logs → Copy logs`,
 `chrome://extensions → Service worker` console.
 `dist/` is gitignored build output — never edit; edit `src/` + rebuild.

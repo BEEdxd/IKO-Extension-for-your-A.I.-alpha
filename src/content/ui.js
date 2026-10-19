@@ -59,42 +59,47 @@ window.IKO.ui = {
     }
 
     // User-dragged HUD stays where dropped (only keep it on top).
-
-
     if (hud.dataset.pinned === "1") {
-      hud.style.setProperty("position", "fixed", "important");
-      hud.style.setProperty("z-index", "2147483640", "important");
-
-      const margin = 12;
-      const rect = hud.getBoundingClientRect();
-
-      const width = rect.width || hud.offsetWidth || 270;
-      const height = rect.height || hud.offsetHeight || 200;
-
-      const left = Math.max(
-        margin,
-        Math.min(
-          rect.left,
-          window.innerWidth - width - margin
-        )
-      );
-
-      const top = Math.max(
-        margin,
-        Math.min(
-          rect.top,
-          window.innerHeight - height - margin
-        )
-      );
-
-      hud.style.setProperty("left", `${left}px`, "important");
-      hud.style.setProperty("top", `${top}px`, "important");
-      hud.style.setProperty("right", "auto", "important");
-      hud.style.setProperty("bottom", "auto", "important");
-
+      hud.style.zIndex = "2147483640";
       return;
     }
 
+    hud.style.position = "fixed";
+    hud.style.zIndex = "2147483640";
+
+    const box = this.composerBox();
+
+    if (box) {
+      /*
+       * Dock onto the text box: HUD bottom
+       * sits just above the composer top,
+       * right edges aligned.
+       */
+      const w = hud.offsetWidth || 280;
+      const h = hud.offsetHeight || 200;
+      const gap = 10;
+
+      let left = Math.round(box.right - w);
+      left = Math.min(
+        Math.max(8, left),
+        Math.max(8, window.innerWidth - w - 8)
+      );
+
+      let top = Math.round(box.top - h - gap);
+      if (top < 8) {
+        // No room above — drop just below the box instead.
+        top = Math.min(
+          Math.round(box.bottom + gap),
+          Math.max(8, window.innerHeight - h - 8)
+        );
+      }
+
+      hud.style.left = `${left}px`;
+      hud.style.top = `${top}px`;
+      hud.style.right = "auto";
+      hud.style.bottom = "auto";
+      return;
+    }
 
     /*
      * Fallback dock when no composer is
@@ -185,10 +190,6 @@ window.IKO.ui = {
 
     hud.id =
       "iko-context-hud";
-    hud.style.width = "300px";
-    hud.style.minWidth = "270px";
-    hud.style.height = "auto";
-    hud.style.boxSizing = "border-box";
 
     hud.innerHTML = `
             <div class="iko-hud-main">
@@ -247,16 +248,6 @@ window.IKO.ui = {
                     </div>
 
                 </div>
-
-                <label class="iko-hud-alert-control" for="iko-hud-alert-threshold">
-                    Alert at
-                    <select id="iko-hud-alert-threshold" aria-label="Context warning threshold">
-                        <option value="50">50%</option>
-                        <option value="60">60%</option>
-                        <option value="70">70%</option>
-                        <option value="80" selected>80%</option>
-                    </select>
-                </label>
 
 
                 <!-- LOADING -->
@@ -322,7 +313,6 @@ window.IKO.ui = {
 
     this.ensureBot();
     this.ensureThemeToggle(hud);
-    this.wireAlertThreshold();
     this.wireActions();
     this.wireHudDrag();
 
@@ -351,38 +341,6 @@ window.IKO.ui = {
     );
 
     this.startPositionTracking();
-  },
-
-  wireAlertThreshold() {
-    const select = document.getElementById("iko-hud-alert-threshold");
-    if (!select || select.dataset.wired) return;
-    select.dataset.wired = "1";
-    window.IKO = window.IKO || {};
-    window.IKO.config = window.IKO.config || {};
-    const key = "ikoContextAlertThreshold";
-    const allowed = [50, 60, 70, 80];
-    const apply = (raw) => {
-      const value = allowed.includes(Number(raw)) ? Number(raw) : 80;
-      select.value = String(value);
-      window.IKO.config.contextAlertThreshold = value;
-    };
-    apply(80);
-    try {
-      if (globalThis.chrome?.storage?.local) {
-        chrome.storage.local.get([key], (result) => apply(result?.[key]));
-      } else {
-        apply(localStorage.getItem(key));
-      }
-    } catch { /* retain the default */ }
-    select.addEventListener("change", () => {
-      const value = Number(select.value);
-      apply(value);
-      try {
-        if (globalThis.chrome?.storage?.local) chrome.storage.local.set({ [key]: value });
-        else localStorage.setItem(key, String(value));
-      } catch { /* in-memory setting still applies */ }
-      window.dispatchEvent(new CustomEvent("iko-context-threshold-changed"));
-    });
   },
 
   // Moon/sun theme switch in the HUD header strip
@@ -422,67 +380,30 @@ window.IKO.ui = {
       bot.innerHTML = '<span class="iko-bot-dot"></span><span>IKO</span>';
       document.documentElement.appendChild(bot);
     }
+    // Fixed dock: bottom-right corner sits below the composer row and clear
+    // of chat content. No dragging — the pill never moves or covers content.
     try {
       bot.style.position = "fixed";
+      bot.style.left = "auto";
+      bot.style.top = "auto";
+      bot.style.right = "24px";
+      bot.style.bottom = "22px";
       bot.style.zIndex = "2147483645";
-      bot.title = "Drag to move · click to show or hide IKO";
+      bot.dataset.pinned = "1";
+      bot.title = "IKO — click to show/hide";
     } catch { /* ignore */ }
-    if (!bot.dataset.positionRestored) {
-      bot.dataset.positionRestored = "1";
-      this.positionBot(true);
-    }
-    this.makeDraggable(bot, { storageKey: "ikoBotPos" });
-
+    // Forget any previously dragged spot so the pill always docks.
+    try { localStorage.removeItem("ikoBotPos"); } catch { /* ignore */ }
+    try { globalThis.chrome?.storage?.local?.remove?.("ikoBotPos"); } catch { /* ignore */ }
     if (!bot.dataset.wired) {
       bot.dataset.wired = "1";
-
-
       bot.addEventListener("click", () => {
-        if (bot.dataset.dragged === "1") return;
-
-        let hud = document.getElementById("iko-context-hud");
-
-        if (!hud) {
-          this.create();
-          return;
-        }
-
-        const style = getComputedStyle(hud);
-
-        const isHidden =
-          style.display === "none" ||
-          style.visibility === "hidden" ||
-          Number(style.opacity) === 0;
-
-        if (!isHidden) {
-          hud.style.setProperty("display", "none", "important");
-          return;
-        }
-
-        // Remove stale inline positioning overrides.
-        [
-          "inset",
-          "top",
-          "left",
-          "right",
-          "bottom",
-          "width",
-          "height"
-        ].forEach(property => {
-          hud.style.removeProperty(property);
-        });
-
-        // Make the HUD measurable before positioning it.
-        hud.style.setProperty("display", "block", "important");
-        hud.style.setProperty("visibility", "visible", "important");
-        hud.style.setProperty("opacity", "1", "important");
-
-        this.position();
-
-        // Ensure it remains visible after positioning.
-        hud.style.setProperty("display", "block", "important");
-        hud.style.setProperty("visibility", "visible", "important");
-        hud.style.setProperty("opacity", "1", "important");
+        if (bot.dataset.dragged === "1") return; // was a drag, not a click
+        const hud = document.getElementById("iko-context-hud");
+        if (!hud) { this.create(); return; }
+        const hidden = hud.style.display === "none";
+        hud.style.display = hidden ? "" : "none";
+        if (hidden) this.position();
       });
     }
   },
@@ -515,7 +436,7 @@ window.IKO.ui = {
     if (!bot) return;
     bot.style.position = "fixed";
     bot.style.zIndex = "2147483645";
-    this.restoreSpot(bot, "ikoBotPos", 24, 22, !restore);
+    this.restoreSpot(bot, "ikoBotPos", 24, 22);
     void restore;
   },
 
@@ -531,10 +452,10 @@ window.IKO.ui = {
       }
       left = Math.min(Math.max(8, left), Math.max(8, window.innerWidth - w - 8));
       top = Math.min(Math.max(8, top), Math.max(8, window.innerHeight - h - 8));
-      el.style.setProperty("left", `${left}px`, "important");
-      el.style.setProperty("top", `${top}px`, "important");
-      el.style.setProperty("right", "auto", "important");
-      el.style.setProperty("bottom", "auto", "important");
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
       el.dataset.pinned = "1";
       return true;
     };
@@ -591,10 +512,10 @@ window.IKO.ui = {
       const w = el.offsetWidth || 100, h = el.offsetHeight || 40;
       left = Math.min(Math.max(8, left), Math.max(8, window.innerWidth - w - 8));
       top = Math.min(Math.max(8, top), Math.max(8, window.innerHeight - h - 8));
-      el.style.setProperty("left", `${left}px`, "important");
-      el.style.setProperty("top", `${top}px`, "important");
-      el.style.setProperty("right", "auto", "important");
-      el.style.setProperty("bottom", "auto", "important");
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
       return { left, top };
     };
     const begin = (cx, cy) => {
@@ -605,10 +526,10 @@ window.IKO.ui = {
       const r = el.getBoundingClientRect();
       sl = r.left; st = r.top;
       // switch from right/bottom anchoring to left/top before moving
-      el.style.setProperty("left", `${sl}px`, "important");
-      el.style.setProperty("top", `${st}px`, "important");
-      el.style.setProperty("right", "auto", "important");
-      el.style.setProperty("bottom", "auto", "important");
+      el.style.left = `${sl}px`;
+      el.style.top = `${st}px`;
+      el.style.right = "auto";
+      el.style.bottom = "auto";
       if (dragClass) el.classList.add(dragClass);
     };
     const move = (cx, cy) => {
@@ -917,32 +838,11 @@ window.IKO.ui = {
      * Status
      */
     if (status) {
-      const sourceLabels = {
-        conversation: "Full conversation",
-        selectors: "Visible messages",
-        thread: "Page text estimate",
-        none: "Waiting for messages"
-      };
-      const sourceLabel = sourceLabels[data?.source] || "Context estimate";
-      const sourceDetails = {
-        conversation: "IKO read the site's conversation data. This is the most complete reading available for this chat.",
-        selectors: "IKO counted message elements visible in the page. Earlier turns that the site has unmounted may not be included.",
-        thread: "IKO estimated from readable page text. The estimate may include non-message text or miss content the page has not rendered.",
-        none: "IKO has not detected conversation messages on this page yet."
-      };
-      const statusText = data?.status || data?.measurement || "Context measured";
-      const statusAlreadyNamesSource = data?.source === "conversation" && /full conversation/i.test(statusText);
-      status.textContent = data?.source && data.source !== "none" && !statusAlreadyNamesSource
-        ? `${statusText} · ${sourceLabel}`
-        : statusText;
-      status.title = [
-        `Platform: ${data?.platform || "Unknown"}`,
-        `Reading: ${sourceLabel}`,
-        sourceDetails[data?.source] || "IKO is using its available context estimate for this platform.",
-        data?.reason ? `Details: ${data.reason}` : "",
-        data?.messageCount != null ? `Messages counted: ${data.messageCount}` : ""
-      ].filter(Boolean).join("\n");
-      status.setAttribute("aria-label", `${data?.platform || "AI platform"}: ${sourceLabel}. ${sourceDetails[data?.source] || "Context estimate."}`);
+
+      status.textContent =
+        data?.status ||
+        data?.measurement ||
+        "Context measured";
     }
 
 

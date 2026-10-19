@@ -13,10 +13,17 @@ window.IKO.chatThread = chatThread;
 let timer = null;
 let counting = false;
 let lastSignature = "";
+let lastDraftSignature = "";
+let lastDraftText = "";
 
 // One message can be huge (a pasted document). The tokenizer runs at ~35M
 // chars/s, so this is only a guard against pathological pages.
 const MAX_MESSAGE_CHARS = 400000;
+
+// Debounce for composer typing so we don't re-tokenise on every keystroke,
+// but still reflect the draft within ~200 ms of the user stopping.
+let draftTimer = null;
+const DRAFT_DEBOUNCE_MS = 200;
 
 function resetCounting() {
     counting = false;
@@ -61,9 +68,6 @@ function platformInfo() {
 function hasActiveConversation() {
     const h = location.hostname.toLowerCase();
     const p = location.pathname;
-    // ChatGPT's home screen contains welcome copy and suggested prompts. They
-    // are page chrome, not conversation context; only /c/<id> has a chat.
-    if ((h.includes("chatgpt") || h.includes("openai")) && !conversationId()) return false;
     return !(h.includes("gemini") && (p === "/app" || p === "/app/"));
 }
 
@@ -71,6 +75,90 @@ function readThread(platformId) {
     if (!hasActiveConversation()) return { messages: [], source: "none" };
     if (typeof chatThread.extractChatThread !== "function") return { messages: [], source: "none" };
     return chatThread.extractChatThread(platformId);
+}
+
+// --- composer / draft tracking ----------------------------------------------
+
+// Locate the active message composer using the shared composer resolver
+// (supports textarea, contenteditable, ProseMirror, rich-textarea, …).
+function composerElement() {
+    if (window.IKOComposer?.findComposer) {
+        try { return window.IKOComposer.findComposer(); } catch { return null; }
+    }
+    return null;
+}
+
+// Read the unsent draft text from the composer.
+function readDraftText() {
+    const el = composerElement();
+    if (!el) return "";
+    try {
+        if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+            return el.value || "";
+        }
+        // contenteditable / rich-textarea / ProseMirror / etc.
+        return el.innerText || el.textContent || "";
+    } catch { return ""; }
+}
+
+function draftTokenCount(text) {
+    if (!text) return 0;
+    try { return countTokens(String(text).slice(0, MAX_MESSAGE_CHARS)); } catch { return 0; }
+}
+
+// Returns true if the draft text is already represented in the conversation
+// (e.g. the last user message hasn't been cleared from the composer yet), so
+// we don't double-count it against the context budget.
+function draftOverlapsConversation(draft, messages) {
+    if (!draft || !messages.length) return false;
+    const last = messages[messages.length - 1];
+    if (!last) return false;
+    const normalized = (s) => String(s || "").replace(/\s+/g, " ").trim();
+    return normalized(draft) === normalized(last.content);
+}
+
+// Schedule a faster update when the user is typing (draft changed).
+function scheduleDraftUpdate() {
+    if (draftTimer) return;
+    draftTimer = setTimeout(() => {
+        draftTimer = null;
+        update();
+    }, DRAFT_DEBOUNCE_MS);
+}
+
+// Attach input listeners and a MutationObserver to the composer so typing,
+// pasting, and DOM replacement of the composer all trigger re-counts.
+function setupComposerWatcher() {
+    if (composerObserver) {
+        try { composerObserver.disconnect(); } catch { /* ignore */ }
+        composerObserver = null;
+    }
+
+    const el = composerElement();
+    if (!el) return;
+
+    // Direct input events on the composer.
+    const onInput = () => scheduleDraftUpdate();
+    el.addEventListener("input", onInput, { passive: true });
+    el.addEventListener("change", onInput, { passive: true });
+    el.addEventListener("keyup", onInput, { passive: true });
+    el.addEventListener("paste", onInput, { passive: true });
+
+    // MutationObserver for structural changes (React re-rendering the composer).
+    composerObserver = new MutationObserver((records) => {
+        for (const record of records) {
+            if (isOwnUi(record.target)) continue;
+            scheduleDraftUpdate();
+            return;
+        }
+    });
+    try {
+        composerObserver.observe(el, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    } catch { /* ignore */ }
 }
 
 // --- whole-conversation counting ---------------------------------------------
@@ -89,7 +177,6 @@ let highWater = { key: "", tokens: 0 };
 // bridge payload and the endpoint attempt must all be dropped — otherwise the
 // HUD can keep showing the previous chat's number until the extension reloads.
 let lastKey = "";
-let navigationChangedAt = 0;
 
 // A same-origin fetch of the conversation endpoint never downgrades a payload
 // that already holds more messages (bridge payload included).
@@ -107,7 +194,7 @@ function bridgeMessages() {
         if (!payload) return [];
         // Never count another conversation's payload: the bridge can hold the
         // previous chat (or its sidebar list) while this tab shows a new one.
-        const payloadId = String(payload?.conversation_id || bridge?.latestValidConversationId || bridge?.latestConversationId || "").slice(0, 64);
+        const payloadId = String(payload?.conversation_id || "").slice(0, 64);
         if (payloadId && payloadId !== id) return [];
         if (bridgeCache.initialized && bridgeCache.convoId !== id) {
             bridgeCache = { payload: null, convoId: id, messages: [], tokens: -1, initialized: true };
@@ -153,9 +240,9 @@ function conversationId() {
 }
 
 function fetchConversation() {
+    if (remoteAttempt.pending) return;
     const id = conversationId();
     if (!id) return;
-    if (remoteAttempt.pending && remoteAttempt.id === id) return;
     if (id === remoteAttempt.id && Date.now() - remoteAttempt.at < 60000) return;
     remoteAttempt = { id, at: Date.now(), pending: true };
     const log = (level, message, data) => {
@@ -176,20 +263,16 @@ function fetchConversation() {
                 if (!response.ok) { log("warn", `conversation endpoint ${path} → ${response.status}`, {}); continue; }
                 const data = await response.json();
                 const messages = chatThread.extractConversationMessages(data);
-                // Navigation may happen while the request is in flight.
-                if (conversationId() !== id) return;
                 if (messages?.length) {
                     // Never downgrade: keep whichever payload holds more messages.
                     try {
                         const bridge = window.IKO.chatgptBridge;
-                        if (bridge && (bridge.latestValidConversationId !== id || messages.length > (bridge.latestValidMessages || 0))) {
+                        if (bridge && messages.length > (bridge.latestValidMessages || 0)) {
                             bridge.latestValidConversation = data;
-                            bridge.latestValidConversationId = id;
                             bridge.latestValidMessages = messages.length;
                         }
                     } catch { /* ignore */ }
                     log("info", `whole conversation read (${path})`, { messages: messages.length });
-                    if (remoteAttempt.id === id) scheduleUpdate(0);
                     return;
                 }
                 log("warn", `conversation payload unparsable (${path})`, { keys: Object.keys(data || {}).slice(0, 8).join(",") });
@@ -197,7 +280,7 @@ function fetchConversation() {
                 log("warn", `conversation fetch failed (${path})`, { error: String(error?.message || error).slice(0, 160) });
             }
         }
-    })().finally(() => { if (remoteAttempt.id === id) remoteAttempt.pending = false; });
+    })().finally(() => { remoteAttempt.pending = false; });
 }
 
 // A page the reader cannot fully read must be diagnosable from "Copy logs":
@@ -247,7 +330,7 @@ function logWeakRead(info, source, reason) {
 
 // Re-tokenising an unchanged thread every 2s burns CPU for nothing. The
 // signature also lets the HUD skip idle renders without going stale.
-function signature(info, messages, source, fullTokens) {
+function signature(info, messages, source, fullTokens, draftText, draftTok) {
     let hash = 2166136261;
     const mix = (text) => {
         for (let i = 0; i < text.length; i++) {
@@ -255,8 +338,9 @@ function signature(info, messages, source, fullTokens) {
             hash = Math.imul(hash, 16777619);
         }
     };
-    mix(`${info.name}|${source}|${messages.length}|${fullTokens}`);
+    mix(`${info.name}|${source}|${messages.length}|${fullTokens}|${draftTok}`);
     for (const message of messages) mix(message.content);
+    mix(draftText || "");
     return (hash >>> 0).toString(16);
 }
 
@@ -268,39 +352,18 @@ function update() {
 
     // Every site: a different host+path is a different conversation. Drop all
     // per-chat state (signature cache, high-water mark, bridge payload,
-    // endpoint attempt) so the HUD re-counts the new chat immediately instead
-    // of showing the previous one until the extension is reloaded.
+    // endpoint attempt, draft state) so the HUD re-counts the new chat
+    // immediately instead of showing the previous one until reload.
     const key = conversationKey();
     if (key !== lastKey) {
-        const hadPreviousChat = Boolean(lastKey);
         lastKey = key;
-        navigationChangedAt = Date.now();
         lastSignature = "";
+        lastDraftSignature = "";
+        lastDraftText = "";
         lastDiagnostic = "";
         bridgeCache = { payload: null, messages: [], tokens: -1, initialized: false };
         remoteAttempt = { id: "", at: 0, pending: false };
-        try {
-            const bridge = window.IKO?.chatgptBridge;
-            if (bridge) {
-                bridge.latestConversation = null;
-                bridge.latestConversationId = "";
-                bridge.latestValidConversation = null;
-                bridge.latestValidConversationId = "";
-                bridge.latestValidMessages = 0;
-            }
-        } catch { /* ignore */ }
         highWater = { key, tokens: 0 };
-        if (hadPreviousChat) {
-            window.IKO.latestData = null;
-            window.IKO.ui.update({
-                platform: info.name,
-                tokens: 0,
-                messageCount: 0,
-                usagePercentage: null,
-                source: "none",
-                status: "Updating chat…"
-            });
-        }
     }
 
     let messages = [];
@@ -322,8 +385,21 @@ function update() {
     // ChatGPT without a conversation in hand: ask the page's own endpoint.
     if (!full.length && info.id === "chatgpt") fetchConversation();
 
-    if (!messages.length && !full.length) {
+    // --- draft reading: unsent text in the composer -----------------------
+    const draftText = readDraftText();
+    const draftOverlaps = draftOverlapsConversation(draftText, messages);
+    const draftTok = draftOverlaps ? 0 : draftTokenCount(draftText);
+
+    const fullTokens = full.length ? bridgeTokens() : -1;
+    const domTokens = messages.reduce(
+        (total, message) => total + countTokens(message.content.slice(0, MAX_MESSAGE_CHARS)),
+        0
+    );
+
+    if (!messages.length && !full.length && !draftText) {
         lastSignature = "";
+        lastDraftSignature = "";
+        lastDraftText = "";
         // Make a site we cannot read diagnosable from the console / View logs.
         logWeakRead(info, source, reason);
         window.IKO.latestData = {
@@ -334,17 +410,18 @@ function update() {
             tokenizer: "o200k_base",
             source,
             reason,
-            status: Date.now() - navigationChangedAt < 4000
-                ? (conversationId() ? "Updating chat…" : "New chat")
-                : (conversationId() ? "Waiting for messages" : "New chat")
+            status: "Waiting for messages",
+            draftTokens: 0,
+            projectedTokens: 0,
+            projectedUsagePercentage: 0,
+            draftOverlap: false
         };
         window.IKO.ui.update(window.IKO.latestData);
         return;
     }
 
-    const fullTokens = full.length ? bridgeTokens() : -1;
-    const sig = signature(info, messages, source, fullTokens);
-    if (sig === lastSignature && window.IKO.latestData) {
+    const sig = signature(info, messages, source, fullTokens, draftText, draftTok);
+    if (sig === lastSignature && lastDraftSignature === draftText && window.IKO.latestData) {
         // Nothing new to count: keep the HUD in sync without re-tokenising.
         window.IKO.ui.update(window.IKO.latestData);
         return;
@@ -359,16 +436,15 @@ function update() {
             (window.IKO.latestData.tokens > 0 || window.IKO.latestData.messageCount > 0));
         if (!hasCount) window.IKO.ui.setLoading(true, "Counting context…");
         try {
-            const domTokens = messages.reduce(
-                (total, message) => total + countTokens(message.content.slice(0, MAX_MESSAGE_CHARS)),
-                0
-            );
-
             // Whole conversation when the page exposes it, live DOM otherwise,
             // and never less than the largest count already seen here: a site
             // that unmounts old turns must not look like it freed context.
             const tokens = Math.max(domTokens, fullTokens, highWater.tokens);
             highWater.tokens = tokens;
+
+            // Projected context = conversation + unsent draft. Draft that
+            // duplicates the last conversation message is not double-counted.
+            const projectedTokens = tokens + draftTok;
             const whole = fullTokens > domTokens;
             const usedSource = whole ? "conversation" : source;
             // Without the whole conversation, a fallback reading is worth a one-off
@@ -376,13 +452,17 @@ function update() {
             if (!whole && source !== "selectors") logWeakRead(info, source, reason);
 
             const cost = tokens / 1000000 * info.price;
+            const projectedCost = projectedTokens / 1000000 * info.price;
             const pct = Math.min(100, Math.round((tokens / info.budget) * 100));
-            const alertThreshold = Number(window.IKO.config?.contextAlertThreshold) || 80;
+            const projectedPct = Math.min(100, Math.round((projectedTokens / info.budget) * 100));
             const health = pct >= 95 ? "⚠ Context critical — migrate or summarize"
-                : pct >= alertThreshold ? "⚠ Context filling — consider migrate"
-                    : usedSource === "conversation" ? "Full conversation"
-                        : usedSource === "thread" ? "Thread estimate — no message markup"
-                            : "Local tokenizer estimate";
+                : pct >= 80 ? "⚠ Context filling — consider migrate"
+                : usedSource === "conversation" ? "Full conversation"
+                : usedSource === "thread" ? "Thread estimate — no message markup"
+                : "Local tokenizer estimate";
+
+            const draftLabel = draftTok > 0 ? ` + ${draftTok} draft` : "";
+            const projectedLabel = draftTok > 0 ? ` (${projectedTokens} projected)` : "";
 
             window.IKO.latestData = {
                 platform: info.name,
@@ -393,10 +473,16 @@ function update() {
                 cost,
                 source: usedSource,
                 reason: whole ? `whole-conversation(${full.length} msgs)` : reason,
-                status: `${health} · ~$${cost.toFixed(3)}`
+                status: `${health}${draftLabel}${projectedLabel} · ~$${cost.toFixed(3)}`,
+                draftTokens: draftTok,
+                projectedTokens,
+                projectedUsagePercentage: projectedPct,
+                draftOverlap: draftOverlaps
             };
 
             lastSignature = sig;
+            lastDraftSignature = draftText;
+            lastDraftText = draftText;
             window.IKO.ui.update(window.IKO.latestData);
         } catch (error) {
             console.error("[IKO ChatGPT] Tokenizer failed:", error);
@@ -406,7 +492,11 @@ function update() {
                 messageCount: messages.length,
                 usagePercentage: 0,
                 tokenizer: "o200k_base",
-                status: "Tokenizer error"
+                status: "Tokenizer error",
+                draftTokens: draftTok,
+                projectedTokens: draftTok,
+                projectedUsagePercentage: 0,
+                draftOverlap: false
             });
         }
     } finally {
@@ -422,6 +512,7 @@ function update() {
 // extra reads — throttled while a stream is running. Every read still goes
 // through the signature cache, so idle ticks stay cheap.
 let observer = null;
+let composerObserver = null;
 let domTimer = null;
 let domLast = 0;
 let urlTimer = null;
@@ -471,26 +562,41 @@ function watchPage() {
 
 // SPA chat switches change the URL before the new conversation renders; react
 // at once instead of waiting for the heartbeat or a DOM mutation.
-
 function watchUrl() {
     clearInterval(urlTimer);
-
     urlTimer = setInterval(() => {
         if (location.href === lastHref) return;
-
         lastHref = location.href;
-
-        // Request fresh conversation data from the page bridge.
-        try {
-            window.IKO?.chatgptBridge?.requestConversationRefresh?.();
-        } catch (error) {
-            console.warn("[IKO ChatGPT] Refresh request failed:", error);
-        }
-
         update();
+        // The composer element may have been replaced by the SPA navigation;
+        // re-wire input listeners so typing keeps updating the HUD.
+        setupComposerWatcher();
     }, 300);
 }
 
+// Intercept history.pushState / replaceState / popstate so SPA chat switches
+// (which may not mutate the DOM enough to trigger the MutationObserver) cause
+// an immediate re-count.
+function interceptNavigation() {
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    function onNavigation() {
+        scheduleUpdate(100);
+    }
+
+    history.pushState = function (...args) {
+        originalPushState.apply(this, args);
+        onNavigation();
+    };
+
+    history.replaceState = function (...args) {
+        originalReplaceState.apply(this, args);
+        onNavigation();
+    };
+
+    window.addEventListener("popstate", onNavigation);
+}
 
 function initialize() {
     console.log("[IKO ChatGPT] Context HUD initializing");
@@ -500,8 +606,8 @@ function initialize() {
     timer = setInterval(update, 2000);
     watchPage();
     watchUrl();
-    window.addEventListener("iko-chatgpt-conversation-updated", () => scheduleUpdate(0));
-    window.addEventListener("iko-context-threshold-changed", () => update());
+    interceptNavigation();
+    setupComposerWatcher();
     document.addEventListener("visibilitychange", () => {
         if (!document.hidden) update();
     });

@@ -1,49 +1,57 @@
-# IKO Extension for Your AI
+# IKO Context HUD — Global Build 0.2.0
 
-IKO is a Chrome extension that estimates conversation context and helps move chats between supported AI platforms.
+IKO is a Chrome & Firefox MV3 extension for the IKO Context HUD and ChatGPT ↔ Claude session migration. The same folder (with `manifest.json`, `background.js` and `dist/`) loads in both browsers.
 
-**Repository:** [BEEdxd/IKO-Extension-for-your-A.I.-alpha](https://github.com/BEEdxd/IKO-Extension-for-your-A.I.-alpha)
+## Global installation
 
-## Features
-
-- Context HUD with token and estimated usage readings.
-- Reading-source labels and explanations, so you can tell when a count comes from conversation data, visible messages, or a page-text estimate.
-- Adjustable context warning threshold (50%, 60%, 70%, or 80%).
-- Movable HUD and IKO launcher button; their positions are saved locally.
-- Session migration between ChatGPT and Claude, with a prepared conversation preview before opening the destination.
-- Local token estimates; no IKO server or personal API key is required for the HUD.
-
-## Install in Chrome
-
-1. Download or clone this repository and extract it if you downloaded a ZIP.
-2. Open `chrome://extensions`.
-3. Turn on **Developer mode**.
+1. Extract the ZIP.
+2. Open `chrome://extensions` in Chrome.
+3. Enable **Developer mode**.
 4. Click **Load unpacked**.
-5. Select the project folder that contains `manifest.json` and `background.js`.
-6. Open or refresh a supported AI chat tab.
+5. Select the extracted `claude-counter-main` folder — the folder containing `manifest.json` and `background.js`.
+6. Open a **new** ChatGPT or Claude tab after installation.
 
-To apply changes after rebuilding, return to `chrome://extensions`, click **Reload** on IKO, then refresh the AI chat tab.
+No Node.js, npm, localhost server, API key, or backend is required for migration.
 
-## Supported platforms
+## Firefox installation
 
-The context HUD supports ChatGPT, Claude, Gemini, Perplexity, Copilot, Grok, DeepSeek, Mistral, and Poe. The completeness of a reading depends on what each site exposes; IKO labels estimates when it cannot read full conversation data.
+Requires Firefox 128 or newer. No store needed for testing:
 
-Session migration currently supports:
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on…** and select `manifest.json`.
+3. Firefox treats MV3 host permissions as opt-in: if the HUD does not appear on a
+   site, open `about:addons` → **IKO Context HUD** → **Permissions** and grant
+   access to that site.
+
+Temporary add-ons disappear when Firefox closes. For a permanent install, package
+the folder (e.g. `npx web-ext build`) and install the generated `.xpi`.
+
+## Migration
 
 - ChatGPT → Claude
 - Claude → ChatGPT
+- The migration package is stored by the MV3 service worker before the destination tab is opened.
+- Destination pages retrieve the package through the service worker.
+- The implementation avoids `window.open()` so browser pop-up blocking does not break migration.
+- Stale extension contexts are caught instead of producing an uncaught `Extension context invalidated` exception.
 
-## Build from source
+## Account access
 
-Node.js and npm are only needed to rebuild the extension:
+IKO only reads conversations that the currently logged-in ChatGPT or Claude account can access. It cannot bypass platform permissions.
+
+## Token HUD
+
+ChatGPT token counting remains local. Claude's public/global build uses a local estimate so the extension does not require a personal Anthropic API key or a localhost backend.
+
+The estimate is intentionally labeled as an estimate rather than claiming to be Anthropic's exact server-side count.
+
+## Development build
+
+If you want to rebuild the extension from source:
 
 ```bash
 npm install
 npm run build
 ```
 
-The generated extension files are written to `dist/`. Load the project folder containing `manifest.json` in Chrome.
-
-## Privacy and access
-
-IKO reads the chat page and, where available, the site's own conversation response to estimate context or prepare a migration. It can only access conversations available to the account currently signed in to that platform. It does not bypass platform access controls.
+The ready-to-load `dist/` files are already included in the release ZIP, so normal users do not need to run these commands.

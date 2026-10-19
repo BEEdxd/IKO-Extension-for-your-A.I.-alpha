@@ -1,4 +1,4 @@
-# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-welcome-gate)
+# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect)
 
 > Read this first. It documents every feature, file, data flow, upgrade,
 > and how to extend the project without breaking it.
@@ -172,12 +172,7 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
   message-sized blocks, so a chat dominated by its last answer is not walked
   into a single paragraph). If the selector reading covers <25% of the thread
   text and is under 1500 chars it is replaced by that estimate — a confident
-  tiny number is the bug users reported. The no-selector estimate is gated
-  twice: below `THREAD_MIN_CHARS` (120) there is nothing to read, and under
-  `THREAD_FULL_CHARS` (400) it is trusted only when the container splits into
-  ≥2 message-sized blocks — so a compact real thread (a greeting exchange)
-  counts, while a lone welcome/hero panel ("Where should we begin?" + feature
-  tiles, ~270 chars) still reads as waiting. When nothing is readable,
+  tiny number is the bug users reported. When nothing is readable,
   `extractChatThread` returns a `reason`
   (`no-container`, `thread-too-small(n)`, `welcome-screen(n blocks)`) which
   `main.js` writes to the console and to the log panel ("View logs → Copy logs"),
@@ -828,20 +823,6 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
     renamed markup migrates via the reader; empty shell reports the reader
     reason; valid bridge payload preferred; foreign payload refused).
     `npm test` now 78.
-50. `chat-thread.js` had lowered the welcome/hero threshold to
-    `THREAD_MIN_CHARS = 120` but dropped the ≥2-block guard that justified it,
-    so a blank ChatGPT chat ("Where should we begin?" + feature tiles, ~270
-    chars) was read as a `thread` and the HUD showed phantom usage instead of
-    "Waiting for messages" — the documented "≈400 chars is not a conversation"
-    behavior (entry 47e) had drifted out of the code, and
-    `chat-thread.test.js` "a new-chat welcome screen is not counted as a
-    conversation" failed. Fix restores the two-gate rule in
-    `extractChatThread`: a hard floor (`THREAD_MIN_CHARS = 120`, below which
-    nothing is readable) plus a compact gate (`THREAD_FULL_CHARS = 400`,
-    under which the estimate is trusted only when `blockCount(container) ≥ 2`).
-    Compact REAL threads (a greeting exchange with ≥2 blocks ≥120 chars) are
-    still counted — which is what the 120 floor was added for — but a single
-    hero panel now returns `none / thread-too-small(n)`. `npm test` 78/78.
 
 ## 5. Build / test / run
 

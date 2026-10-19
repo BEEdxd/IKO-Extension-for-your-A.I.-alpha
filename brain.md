@@ -1,4 +1,4 @@
-# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect)
+# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-new-chat-guard)
 
 > Read this first. It documents every feature, file, data flow, upgrade,
 > and how to extend the project without breaking it.
@@ -178,6 +178,14 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
   (`no-container`, `thread-too-small(n)`, `welcome-screen(n blocks)`) which
   `main.js` writes to the console and to the log panel ("View logs → Copy logs"),
   so an unreadable site is diagnosable from a screenshot of the logs.
+  NEW-CHAT GUARD: on ChatGPT the root (`/`, no `/c/<id>`) with no message
+  markup is a new chat, not a conversation — the reader returns
+  `new-chat` before the estimate/deep-scan, so the app shell (sidebar history
+  outside `<main>`, hidden panels) can never be counted as phantom usage
+  (1,063 tokens / 1% on a blank chat was this bug). A `/c/<uuid>` URL or any
+  message markup keeps the estimate path alive, so renamed app-shell
+  conversations and temporary chats still count. `main.js` also trims the
+  composer draft, so whitespace never renders as "+ 1 draft".
   `update()` every 2s with `counting` mutex: `budget/price` from
   `matchPlatform(location.hostname)` (platforms.js is the only copy; the old
   inline `BUDGETS/PRICES` tables are gone).
@@ -894,12 +902,26 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
     reader, empty shell reporting the reader reason, conversation outside `<main>`
     found by deep-scan, valid bridge payload preferred, foreign payload refused.
 
+53. "Blank new ChatGPT chat counted as 1,063 tokens / 1%." The 2026 app shell
+    keeps the sidebar/history outside `<main>`, and the new-chat screen has no
+    message markup, so the 400-char/deep-scan fallback read the shell as the
+    thread. The visible welcome text is ~270 chars, but the estimate was ~4,000
+    (sidebar chat titles), hence 1,063 tokens / 1% on an empty chat.
+    `chat-thread.js` now returns `new-chat` (source `none`) when the platform is
+    ChatGPT, the URL has no `/c/<id>`, AND the page has no message markup
+    (`data-message-author-role` / `conversation-turn-*` holding real text).
+    Real conversations keep the estimate (URL gate); temporary chats with
+    messages keep it too (markup gate). `main.js` trims the composer draft, so
+    an empty composer no longer adds "+ 1 draft". New regression tests: the
+    app-shell welcome on `/` reads 0, and a `/c/<uuid>` shell still estimates.
+    `npm test` now 81.
+
 ## 5. Build / test / run
 
 ```bash
 npm install
 node build.js        # or npm run build → dist/{content,claude-content,claude-bridge,chatgpt-bridge,migration}.js + css
-npm test             # 78 tests: migration + chat-thread + chatgpt-adapter + fullhistory + sir/pdf/ocr/retrieval/claude/composer (run it, don't trust the count)
+npm test             # 81 tests: migration + chat-thread + chatgpt-adapter + fullhistory + sir/pdf/ocr/retrieval/claude/composer (run it, don't trust the count)
 npm run test:chatthread   # the Context HUD counting rules only
 ```
 

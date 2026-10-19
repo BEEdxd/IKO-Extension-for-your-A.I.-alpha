@@ -485,6 +485,56 @@ test("a new-chat welcome screen is not counted as a conversation", () => {
     assert.match(result.reason, /thread-too-small/);
 });
 
+test("a ChatGPT new-chat app shell is not counted as conversation context", () => {
+    // 2026 app shell: <main> holds the hero while the sidebar/history lives
+    // outside it. On "/" there is no conversation, so the estimate/deep-scan
+    // must not turn the app shell into ~1,000 phantom tokens (1% usage on a
+    // blank chat — the bug this guards).
+    const hero = node("div", { text: "What's on the agenda today? Create an image or sticker Write or edit Search the web" });
+    const main = node("main");
+    main.appendChild(hero);
+    const shell = node("div");
+    for (let i = 0; i < 60; i++) {
+        shell.appendChild(node("div", { text: `Conversation ${i}: ${"planning the migration and testing every adapter ".repeat(3)}` }));
+    }
+    const body = node("body");
+    body.appendChild(main);
+    body.appendChild(shell);
+    installDom({ main, body, selectors: {} });
+
+    const prev = globalThis.location;
+    globalThis.location = { pathname: "/" };
+    try {
+        const result = extractChatThread("chatgpt");
+        assert.equal(result.source, "none");
+        assert.equal(result.messages.length, 0);
+        assert.equal(result.reason, "new-chat");
+    } finally {
+        if (prev === undefined) delete globalThis.location;
+        else globalThis.location = prev;
+    }
+});
+
+test("an existing ChatGPT conversation still falls back to the thread estimate", () => {
+    // The new-chat guard only fires without a /c/<id> URL and without message
+    // markup; renamed app-shell conversations must keep working.
+    const answer = node("div", { text: `Answer one: ${"The migration flow reads the current session, normalises every message and streams it to the destination. ".repeat(8)}` });
+    const main = node("main");
+    main.appendChild(answer);
+    installDom({ main, selectors: {} });
+
+    const prev = globalThis.location;
+    globalThis.location = { pathname: "/c/12345678-1234-1234-1234-123456789abc" };
+    try {
+        const result = extractChatThread("chatgpt");
+        assert.equal(result.source, "thread");
+        assert.ok(result.messages[0].content.length > 400);
+    } finally {
+        if (prev === undefined) delete globalThis.location;
+        else globalThis.location = prev;
+    }
+});
+
 // ---------------------------------------------------------------------------
 // bridge conversation (whole chat, not just what the DOM mounts)
 // ---------------------------------------------------------------------------

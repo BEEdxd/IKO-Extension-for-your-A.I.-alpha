@@ -94,10 +94,10 @@ function readDraftText() {
     if (!el) return "";
     try {
         if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-            return el.value || "";
+            return (el.value || "").trim();
         }
         // contenteditable / rich-textarea / ProseMirror / etc.
-        return el.innerText || el.textContent || "";
+        return (el.innerText || el.textContent || "").trim();
     } catch { return ""; }
 }
 

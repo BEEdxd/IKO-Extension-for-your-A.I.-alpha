@@ -305,6 +305,33 @@ function fromThread(container) {
     return { messages: [{ role: "user", content, fallback: true, thread: true }], reason: "thread-estimate" };
 }
 
+// ChatGPT's new-chat screen ("What's on the agenda today?") is not a
+// conversation: the URL has no conversation id and the DOM has no message
+// markup. The app shell around it can still be huge (sidebar chat history,
+// hidden panels), so the estimate/deep-scan would report thousands of phantom
+// tokens on an empty chat. Only a conversation URL may be estimated when no
+// markup matched.
+function isChatGPTNewChat(platformId) {
+    if (platformId !== "chatgpt") return false;
+    try {
+        if (typeof location === "undefined" || !location.pathname) return false;
+        // Real conversations live under /c/<uuid> (legacy /c/<id> included).
+        return !/\/c\/[0-9A-Za-z_-]{8,}/.test(location.pathname);
+    } catch { return false; }
+}
+
+function hasMessageMarkup() {
+    try {
+        const nodes = document.querySelectorAll(
+            '[data-message-author-role], [data-testid^="conversation-turn-"]'
+        );
+        for (const node of nodes) {
+            if (textLength(node) > MIN_MESSAGE_CHARS) return true;
+        }
+        return false;
+    } catch { return false; }
+}
+
 // -> { messages: [{ role, content }], source: "selectors" | "thread" | "none", reason }
 function extractChatThread(platformId) {
     let messages = [];
@@ -331,6 +358,15 @@ function extractChatThread(platformId) {
         }
     }
     if (messages.length) return { messages, source: "selectors", reason: "selector-match" };
+
+    // A new ChatGPT chat has no conversation to count. This must come before
+    // the estimate/deep-scan: on the 2026 app shell those fallbacks can read
+    // the sidebar/history and report ~1,000 phantom tokens for the welcome
+    // screen. If message markup exists (e.g. a temporary chat at "/"), the
+    // guard stays off and the estimate still works.
+    if (isChatGPTNewChat(platformId) && !hasMessageMarkup()) {
+        return { messages: [], source: "none", reason: "new-chat" };
+    }
 
     // No selector matched anything — this is either a brand-new/empty chat or a
     // site whose markup we don't know. The thread container may be a small app

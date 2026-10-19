@@ -40,9 +40,12 @@ const DOMINANT_CHILD_RATIO = 0.7;
 const PARTIAL_PRECHECK_CHARS = 1500;
 const PARTIAL_READ_RATIO = 0.25;
 // Short ChatGPT threads can be real conversations well below 400 characters
-// (for example a greeting exchange). The two-block check below still rejects
-// single welcome panels, so allow these compact threads through.
+// (for example a greeting exchange), so the hard floor is low. Between the
+// floor and THREAD_FULL_CHARS a thread is trusted only when it splits into
+// message-sized blocks, so a single welcome/hero panel still reads as
+// "waiting" instead of as usage.
 const THREAD_MIN_CHARS = 120;
+const THREAD_FULL_CHARS = 400;
 
 
 function selectorsFor(platformId) {
@@ -342,7 +345,10 @@ function extractChatThread(platformId) {
     // and must read as "waiting", not as usage.
     if (messages.length === 0 && container?.el) {
         const threadChars = container.chars || textLength(container.el);
-        if (threadChars < THREAD_MIN_CHARS) {
+        // Two gates: the hard floor (nothing readable at all) and the compact
+        // gate (a small thread is only trusted when it splits into ≥2
+        // message-sized blocks — a lone hero panel is not a conversation).
+        if (threadChars < THREAD_MIN_CHARS || (threadChars < THREAD_FULL_CHARS && blockCount(container.el) < 2)) {
             return { messages: [], source: "none", reason: `thread-too-small(${threadChars})` };
         }
     }

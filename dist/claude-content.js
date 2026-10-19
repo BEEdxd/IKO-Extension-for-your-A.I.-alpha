@@ -2091,6 +2091,7 @@ ${text}`)) return { ok: true };
       var PARTIAL_PRECHECK_CHARS = 1500;
       var PARTIAL_READ_RATIO = 0.25;
       var THREAD_MIN_CHARS = 120;
+      var THREAD_FULL_CHARS = 400;
       function selectorsFor(platformId) {
         const out = [];
         const push = (selector) => {
@@ -2329,7 +2330,7 @@ ${text}`)) return { ok: true };
         if (messages.length) return { messages, source: "selectors", reason: "selector-match" };
         if (messages.length === 0 && container?.el) {
           const threadChars = container.chars || textLength(container.el);
-          if (threadChars < THREAD_MIN_CHARS) {
+          if (threadChars < THREAD_MIN_CHARS || threadChars < THREAD_FULL_CHARS && blockCount(container.el) < 2) {
             return { messages: [], source: "none", reason: `thread-too-small(${threadChars})` };
           }
         }

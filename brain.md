@@ -1,4 +1,4 @@
-# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect)
+# IKO BRAIN — Complete Project Knowledge (v0.2.0-universal+attachments+dragbot+sir-p0+p1-pdf+p1b-ocr+p2-retrieval+hud-drag+copilot-fix+claude-fix+full-history+hud-loading-fix+reconnect+hud-welcome-gate)
 
 > Read this first. It documents every feature, file, data flow, upgrade,
 > and how to extend the project without breaking it.
@@ -172,7 +172,12 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
   message-sized blocks, so a chat dominated by its last answer is not walked
   into a single paragraph). If the selector reading covers <25% of the thread
   text and is under 1500 chars it is replaced by that estimate — a confident
-  tiny number is the bug users reported. When nothing is readable,
+  tiny number is the bug users reported. The no-selector estimate is gated
+  twice: below `THREAD_MIN_CHARS` (120) there is nothing to read, and under
+  `THREAD_FULL_CHARS` (400) it is trusted only when the container splits into
+  ≥2 message-sized blocks — so a compact real thread (a greeting exchange)
+  counts, while a lone welcome/hero panel ("Where should we begin?" + feature
+  tiles, ~270 chars) still reads as waiting. When nothing is readable,
   `extractChatThread` returns a `reason`
   (`no-container`, `thread-too-small(n)`, `welcome-screen(n blocks)`) which
   `main.js` writes to the console and to the log panel ("View logs → Copy logs"),
@@ -823,6 +828,17 @@ src/migration/adapters/mock-source-adapter.js + mock/mock-session.js + tests/mig
     renamed markup migrates via the reader; empty shell reports the reader
     reason; valid bridge payload preferred; foreign payload refused).
     `npm test` now 78.
+50. A blank/new chat could be read as a conversation: ChatGPT's welcome
+    screen (hero + feature tiles, ~256 chars) passes the 120-char floor, so
+    `extractChatThread` returned a `thread` estimate and the HUD could show a
+    small phantom usage count instead of 0 / "Waiting for messages". The
+    reader now gates the no-selector estimate twice — `THREAD_MIN_CHARS`
+    (120, hard floor) and `THREAD_FULL_CHARS` (400, under which the estimate
+    needs ≥2 message-sized blocks via `blockCount`). Compact real threads
+    (greeting exchanges) still count; a lone welcome/hero panel returns
+    `none / thread-too-small(n)`, which is what the repo's own test
+    "a new-chat welcome screen is not counted as a conversation" expects.
+    `npm test` 78/78.
 
 ## 5. Build / test / run
 

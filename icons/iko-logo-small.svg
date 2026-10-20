@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" fill="#91c9fa"/>
+  <rect x="16" y="16" width="104" height="104" fill="#000"/>
+  <rect x="8" y="8" width="104" height="104" fill="#fff" stroke="#000" stroke-width="6"/>
+  <text x="16" y="80" font-family="DejaVu Sans, Arial, sans-serif" font-weight="900" font-size="44" letter-spacing="-4" fill="#000">IK</text>
+  <circle cx="85" cy="62" r="17" fill="none" stroke="#000" stroke-width="8"/>
+  <path d="M 71.98 72.93 A 17 17 0 0 1 98.02 51.07" fill="none" stroke="#ffd60a" stroke-width="5"/>
+  <circle cx="98.02" cy="51.07" r="4" fill="#a3f542" stroke="#000" stroke-width="2.5"/>
+</svg>
